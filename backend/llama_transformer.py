@@ -34,13 +34,14 @@ from huggingface_hub import hf_hub_download
 
 @dataclass
 class PerfMetrics:
-    """Performance metrics for a generation."""
+    """Performance metrics for a generation (from llama.cpp internals)."""
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_time_ms: float = 0
     prompt_eval_time_ms: float = 0
     completion_time_ms: float = 0
-    tokens_per_second: float = 0
+    tokens_per_second: float = 0  # Generation speed
+    prompt_per_second: float = 0  # Prompt processing speed
     
     def to_dict(self) -> dict:
         return {
@@ -50,6 +51,7 @@ class PerfMetrics:
             "prompt_eval_time_ms": round(self.prompt_eval_time_ms, 2),
             "completion_time_ms": round(self.completion_time_ms, 2),
             "tokens_per_second": round(self.tokens_per_second, 2),
+            "prompt_per_second": round(self.prompt_per_second, 2),
         }
 
 
@@ -378,9 +380,13 @@ class LlamaTransformer:
         """
         prompt = self._format_chat_prompt(messages)
         
-        # Estimate prompt tokens (rough approximation)
-        prompt_tokens = len(prompt) // 4  # ~4 chars per token on average
+        # Reset timings before generation (if available)
+        try:
+            self.llm.reset_timings()
+        except AttributeError:
+            pass  # Older versions may not have this
         
+        # Fallback timing with manual measurement
         start_time = time.perf_counter()
         first_token_time = None
         token_count = 0
@@ -404,20 +410,40 @@ class LlamaTransformer:
         
         end_time = time.perf_counter()
         
-        # Calculate metrics
-        total_time_ms = (end_time - start_time) * 1000
-        prompt_eval_time_ms = ((first_token_time or end_time) - start_time) * 1000
-        completion_time_ms = (end_time - (first_token_time or start_time)) * 1000
-        tokens_per_second = (token_count / completion_time_ms * 1000) if completion_time_ms > 0 else 0
-        
-        metrics = PerfMetrics(
-            prompt_tokens=prompt_tokens,
-            completion_tokens=token_count,
-            total_time_ms=total_time_ms,
-            prompt_eval_time_ms=prompt_eval_time_ms,
-            completion_time_ms=completion_time_ms,
-            tokens_per_second=tokens_per_second,
-        )
+        # Try to get actual timings from llama.cpp, fallback to manual timing
+        try:
+            timings = self.llm.timings
+            if timings and isinstance(timings, dict) and timings.get("predicted_n", 0) > 0:
+                # Use llama.cpp internal timings
+                metrics = PerfMetrics(
+                    prompt_tokens=timings.get("prompt_n", 0),
+                    completion_tokens=timings.get("predicted_n", token_count),
+                    total_time_ms=timings.get("prompt_ms", 0) + timings.get("predicted_ms", 0),
+                    prompt_eval_time_ms=timings.get("prompt_ms", 0),
+                    completion_time_ms=timings.get("predicted_ms", 0),
+                    tokens_per_second=timings.get("predicted_per_second", 0),
+                    prompt_per_second=timings.get("prompt_per_second", 0),
+                )
+            else:
+                raise AttributeError("Empty timings")
+        except (AttributeError, TypeError):
+            # Fallback to manual timing
+            total_time_ms = (end_time - start_time) * 1000
+            prompt_eval_time_ms = ((first_token_time or end_time) - start_time) * 1000
+            completion_time_ms = (end_time - (first_token_time or start_time)) * 1000
+            tokens_per_second = (token_count / completion_time_ms * 1000) if completion_time_ms > 0 else 0
+            prompt_tokens_est = len(prompt) // 4  # Rough estimate
+            prompt_per_second = (prompt_tokens_est / prompt_eval_time_ms * 1000) if prompt_eval_time_ms > 0 else 0
+            
+            metrics = PerfMetrics(
+                prompt_tokens=prompt_tokens_est,
+                completion_tokens=token_count,
+                total_time_ms=total_time_ms,
+                prompt_eval_time_ms=prompt_eval_time_ms,
+                completion_time_ms=completion_time_ms,
+                tokens_per_second=tokens_per_second,
+                prompt_per_second=prompt_per_second,
+            )
         
         yield (None, metrics)
     

@@ -8,6 +8,10 @@ Provides REST API and Server-Sent Events (SSE) for streaming chat responses.
 import os
 import json
 import asyncio
+import logging
+import sys
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 from contextlib import asynccontextmanager
 
@@ -17,6 +21,25 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from llama_transformer import LlamaTransformer, get_transformer, PerfMetrics
+
+# Setup logging
+LOG_DIR = Path(__file__).parent / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+
+# Create log file with timestamp
+log_filename = LOG_DIR / f"server_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+# Configure logging to both file and console
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.FileHandler(log_filename),
+        logging.StreamHandler(sys.stdout),
+    ],
+)
+logger = logging.getLogger(__name__)
 
 
 # Configuration from environment
@@ -56,23 +79,31 @@ transformer: Optional[LlamaTransformer] = None
 async def lifespan(app: FastAPI):
     """Initialize the transformer on startup."""
     global transformer
-    print("\n🦙 Initializing Llama 3.3 70B Backend Server...")
-    print(f"   Quantization: {QUANT}")
-    print(f"   Context: {CTX} tokens")
-    print(f"   GPU Layers: {GPU_LAYERS}")
+    logger.info("=" * 60)
+    logger.info("🦙 Initializing Llama 3.3 70B Backend Server")
+    logger.info("=" * 60)
+    logger.info(f"Log file: {log_filename}")
+    logger.info(f"Quantization: {QUANT}")
+    logger.info(f"Context: {CTX} tokens")
+    logger.info(f"GPU Layers: {GPU_LAYERS}")
     if MODEL_PATH:
-        print(f"   Model Path: {MODEL_PATH}")
+        logger.info(f"Model Path: {MODEL_PATH}")
     
-    transformer = get_transformer(
-        quantization=QUANT,
-        model_path=MODEL_PATH,
-        n_ctx=CTX,
-        n_gpu_layers=GPU_LAYERS,
-    )
+    try:
+        transformer = get_transformer(
+            quantization=QUANT,
+            model_path=MODEL_PATH,
+            n_ctx=CTX,
+            n_gpu_layers=GPU_LAYERS,
+        )
+        logger.info("✓ Model loaded successfully!")
+    except Exception as e:
+        logger.error(f"Failed to load model: {e}")
+        raise
     
-    print("\n✓ Server ready!")
+    logger.info("✓ Server ready!")
     yield
-    print("\n👋 Shutting down...")
+    logger.info("👋 Shutting down...")
 
 
 app = FastAPI(
@@ -146,9 +177,15 @@ async def chat(request: ChatRequest):
     If stream=False, returns complete response as JSON.
     """
     if transformer is None:
+        logger.error("Chat request received but model not loaded")
         raise HTTPException(status_code=503, detail="Model not loaded")
     
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
+    
+    # Log the request
+    user_msg = next((m["content"][:100] for m in messages if m["role"] == "user"), "")
+    logger.info(f"Chat request: stream={request.stream}, max_tokens={request.max_tokens}")
+    logger.info(f"User message: {user_msg}{'...' if len(user_msg) >= 100 else ''}")
     
     if request.stream:
         return StreamingResponse(
@@ -162,6 +199,7 @@ async def chat(request: ChatRequest):
             temperature=request.temperature,
             stream=False,
         )
+        logger.info(f"Response generated: {len(response)} chars")
         return ChatResponse(response=response)
 
 
@@ -171,6 +209,9 @@ async def stream_chat(
     temperature: float,
 ):
     """Generator for SSE streaming with performance metrics."""
+    logger.info("Starting streaming generation...")
+    token_count = 0
+    
     try:
         for token, metrics in transformer.chat_with_metrics(
             messages,
@@ -179,11 +220,16 @@ async def stream_chat(
         ):
             if token is not None:
                 # Streaming token
+                token_count += 1
                 data = json.dumps({"token": token, "done": False})
                 yield f"data: {data}\n\n"
                 await asyncio.sleep(0)  # Allow other tasks to run
             elif metrics is not None:
                 # Final message with metrics
+                logger.info(f"Generation complete: {token_count} tokens")
+                logger.info(f"Performance: {metrics.tokens_per_second:.2f} tok/s, "
+                           f"prompt: {metrics.prompt_tokens} tok @ {metrics.prompt_per_second:.2f} tok/s, "
+                           f"total: {metrics.total_time_ms:.0f}ms")
                 data = json.dumps({
                     "token": "",
                     "done": True,
@@ -191,6 +237,7 @@ async def stream_chat(
                 })
                 yield f"data: {data}\n\n"
     except Exception as e:
+        logger.error(f"Error during streaming: {e}", exc_info=True)
         yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
 
 

@@ -295,7 +295,7 @@
   font-size: 0.85rem;
 }
 
-.metric:first-child {
+.metric-highlight {
   color: var(--accent-secondary);
   font-weight: 600;
 }

@@ -224,7 +224,7 @@ function App() {
                   {/* Performance metrics */}
                   {message.metrics && showMetrics && (
                     <div className="message-metrics">
-                      <span className="metric">
+                      <span className="metric metric-highlight">
                         <span className="metric-icon">⚡</span>
                         {message.metrics.tokens_per_second} tok/s
                       </span>
@@ -234,13 +234,13 @@ function App() {
                       </span>
                       <span className="metric">
                         <span className="metric-icon">⏱️</span>
-                        {(message.metrics.total_time_ms / 1000).toFixed(1)}s
+                        {(message.metrics.total_time_ms / 1000).toFixed(1)}s total
                       </span>
                       <span className="metric metric-detail">
-                        prompt: {(message.metrics.prompt_eval_time_ms / 1000).toFixed(1)}s
+                        prompt: {message.metrics.prompt_tokens} tok @ {message.metrics.prompt_per_second} tok/s ({(message.metrics.prompt_eval_time_ms / 1000).toFixed(1)}s)
                       </span>
                       <span className="metric metric-detail">
-                        gen: {(message.metrics.completion_time_ms / 1000).toFixed(1)}s
+                        gen: {message.metrics.completion_tokens} tok @ {message.metrics.tokens_per_second} tok/s ({(message.metrics.completion_time_ms / 1000).toFixed(1)}s)
                       </span>
                     </div>
                   )}
