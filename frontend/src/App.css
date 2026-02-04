@@ -242,6 +242,22 @@
   border-color: rgba(88, 166, 255, 0.2);
 }
 
+/* Preserve newlines in user messages */
+.message-text-user {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* Stopped generation indicator */
+.message-stopped {
+  margin-top: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  background: rgba(229, 57, 53, 0.1);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  color: var(--accent-error, #e53935);
+}
+
 .message-text p {
   margin: 0.5em 0;
 }
@@ -354,6 +370,7 @@
 .input-form {
   display: flex;
   gap: 0.75rem;
+  align-items: flex-end; /* Align button to bottom when textarea grows */
 }
 
 .input-field {
@@ -366,6 +383,13 @@
   font-size: 1rem;
   font-family: var(--font-sans);
   transition: all 0.2s;
+  /* Textarea specific */
+  resize: none;
+  min-height: 48px;
+  max-height: 200px;
+  overflow-y: auto;
+  line-height: 1.5;
+  field-sizing: content; /* Auto-resize based on content (modern browsers) */
 }
 
 .input-field:focus {
@@ -406,6 +430,31 @@
   background: var(--bg-tertiary);
   color: var(--text-muted);
   cursor: not-allowed;
+}
+
+.stop-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: var(--accent-error, #e53935);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  animation: pulse-stop 1.5s infinite;
+}
+
+.stop-btn:hover {
+  background: #c62828;
+  transform: translateY(-1px);
+}
+
+@keyframes pulse-stop {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
 }
 
 .loading-spinner {

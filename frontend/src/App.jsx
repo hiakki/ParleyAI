@@ -13,6 +13,7 @@ function App() {
   const [showMetrics, setShowMetrics] = useState(true)  // Toggle metrics display
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
+  const abortControllerRef = useRef(null)  // For stopping generation
 
   // Check server status on mount
   useEffect(() => {
@@ -55,6 +56,9 @@ function App() {
     setInput('')
     setIsLoading(true)
 
+    // Create abort controller for this request
+    abortControllerRef.current = new AbortController()
+
     // Prepare messages with system prompt
     const allMessages = [
       { role: 'system', content: SYSTEM_PROMPT },
@@ -72,6 +76,7 @@ function App() {
           temperature: 0.7,
           stream: true,
         }),
+        signal: abortControllerRef.current.signal,
       })
 
       if (!response.ok) throw new Error('Failed to get response')
@@ -130,21 +135,54 @@ function App() {
         }
       }
     } catch (error) {
-      console.error('Error:', error)
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: `⚠️ Error: ${error.message}. Make sure the backend server is running.`,
-        },
-      ])
+      // Don't show error for user-initiated abort
+      if (error.name === 'AbortError') {
+        console.log('Generation stopped by user')
+        // Update the last message to indicate it was stopped
+        setMessages(prev => {
+          const newMessages = [...prev]
+          if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
+            newMessages[newMessages.length - 1] = {
+              ...newMessages[newMessages.length - 1],
+              stopped: true,
+            }
+          }
+          return newMessages
+        })
+      } else {
+        console.error('Error:', error)
+        setMessages(prev => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `⚠️ Error: ${error.message}. Make sure the backend server is running.`,
+          },
+        ])
+      }
     } finally {
       setIsLoading(false)
+      abortControllerRef.current = null
+    }
+  }
+
+  const stopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
     }
   }
 
   const clearChat = () => {
     setMessages([])
+  }
+
+  // Handle keyboard input for textarea
+  const handleKeyDown = (e) => {
+    // Enter without Shift sends the message
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      sendMessage(e)
+    }
+    // Shift+Enter adds a new line (default behavior)
   }
 
   return (
@@ -214,13 +252,19 @@ function App() {
                   <div className="message-role">
                     {message.role === 'user' ? 'You' : 'Llama'}
                   </div>
-                  <div className="message-text">
+                  <div className={`message-text ${message.role === 'user' ? 'message-text-user' : ''}`}>
                     {message.role === 'assistant' ? (
                       <ReactMarkdown>{message.content || '...'}</ReactMarkdown>
                     ) : (
                       message.content
                     )}
                   </div>
+                  {/* Stopped indicator */}
+                  {message.stopped && (
+                    <div className="message-stopped">
+                      <span>⏹️ Generation stopped</span>
+                    </div>
+                  )}
                   {/* Performance metrics */}
                   {message.metrics && showMetrics && (
                     <div className="message-metrics">
@@ -266,31 +310,41 @@ function App() {
       {/* Input */}
       <footer className="input-container">
         <form onSubmit={sendMessage} className="input-form">
-          <input
+          <textarea
             ref={inputRef}
-            type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={serverStatus === 'connected' ? 'Ask Llama anything...' : 'Waiting for server...'}
+            onKeyDown={handleKeyDown}
+            placeholder={serverStatus === 'connected' ? 'Ask Llama anything... (Shift+Enter for new line)' : 'Waiting for server...'}
             disabled={isLoading || serverStatus !== 'connected'}
             className="input-field"
+            rows={1}
           />
-          <button
-            type="submit"
-            disabled={!input.trim() || isLoading || serverStatus !== 'connected'}
-            className="send-btn"
-          >
-            {isLoading ? (
-              <span className="loading-spinner"></span>
-            ) : (
+          {isLoading ? (
+            <button
+              type="button"
+              onClick={stopGeneration}
+              className="stop-btn"
+              title="Stop generation"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="6" width="12" height="12" rx="2"/>
+              </svg>
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!input.trim() || serverStatus !== 'connected'}
+              className="send-btn"
+            >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
               </svg>
-            )}
-          </button>
+            </button>
+          )}
         </form>
         <div className="input-footer">
-          <span>Powered by llama.cpp • Running locally on Apple Silicon</span>
+          <span>Powered by llama.cpp • Running locally on Apple Silicon • Enter to send, Shift+Enter for new line</span>
         </div>
       </footer>
     </div>
