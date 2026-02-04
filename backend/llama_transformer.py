@@ -410,11 +410,50 @@ class LlamaTransformer:
         
         end_time = time.perf_counter()
         
-        # Try to get actual timings from llama.cpp, fallback to manual timing
+        # Try to get actual timings from llama.cpp
+        metrics = None
+        
         try:
-            timings = self.llm.timings
-            if timings and isinstance(timings, dict) and timings.get("predicted_n", 0) > 0:
-                # Use llama.cpp internal timings
+            timings = None
+            
+            # Method 1: Use llama_perf_context from llama_cpp library (most reliable)
+            try:
+                import llama_cpp.llama_cpp as llama_cpp_lib
+                if hasattr(llama_cpp_lib, 'llama_perf_context') and hasattr(self.llm, '_ctx'):
+                    perf = llama_cpp_lib.llama_perf_context(self.llm._ctx.ctx)
+                    if hasattr(perf, 'n_eval') and perf.n_eval > 0:
+                        t_p_eval_ms = getattr(perf, 't_p_eval_ms', 0)
+                        n_p_eval = getattr(perf, 'n_p_eval', 0)
+                        t_eval_ms = getattr(perf, 't_eval_ms', 0)
+                        n_eval = getattr(perf, 'n_eval', 0)
+                        
+                        timings = {
+                            "prompt_n": n_p_eval,
+                            "prompt_ms": t_p_eval_ms,
+                            "prompt_per_second": (n_p_eval / t_p_eval_ms * 1000) if t_p_eval_ms > 0 else 0,
+                            "predicted_n": n_eval,
+                            "predicted_ms": t_eval_ms,
+                            "predicted_per_second": (n_eval / t_eval_ms * 1000) if t_eval_ms > 0 else 0,
+                        }
+            except Exception:
+                pass
+            
+            # Method 2: Try llm.timings property (some versions)
+            if timings is None and hasattr(self.llm, 'timings'):
+                raw_timings = self.llm.timings
+                if isinstance(raw_timings, dict) and raw_timings.get("predicted_n", 0) > 0:
+                    timings = raw_timings
+                elif hasattr(raw_timings, 'predicted_n') and raw_timings.predicted_n > 0:
+                    timings = {
+                        "prompt_n": getattr(raw_timings, 'prompt_n', 0),
+                        "prompt_ms": getattr(raw_timings, 'prompt_ms', 0),
+                        "prompt_per_second": getattr(raw_timings, 'prompt_per_second', 0),
+                        "predicted_n": getattr(raw_timings, 'predicted_n', 0),
+                        "predicted_ms": getattr(raw_timings, 'predicted_ms', 0),
+                        "predicted_per_second": getattr(raw_timings, 'predicted_per_second', 0),
+                    }
+            
+            if timings:
                 metrics = PerfMetrics(
                     prompt_tokens=timings.get("prompt_n", 0),
                     completion_tokens=timings.get("predicted_n", token_count),
@@ -424,10 +463,12 @@ class LlamaTransformer:
                     tokens_per_second=timings.get("predicted_per_second", 0),
                     prompt_per_second=timings.get("prompt_per_second", 0),
                 )
-            else:
-                raise AttributeError("Empty timings")
-        except (AttributeError, TypeError):
-            # Fallback to manual timing
+                
+        except Exception:
+            pass
+        
+        # Fallback to manual timing if native timings not available
+        if metrics is None:
             total_time_ms = (end_time - start_time) * 1000
             prompt_eval_time_ms = ((first_token_time or end_time) - start_time) * 1000
             completion_time_ms = (end_time - (first_token_time or start_time)) * 1000
