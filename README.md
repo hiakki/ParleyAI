@@ -97,6 +97,9 @@ Running a 70B parameter model (normally ~140GB in FP16) efficiently requires:
 | IQ2_XXS | ~19GB | 10GB+ | Extreme compression |
 | Q2_K | ~26GB | 12GB+ | Low quality |
 | Q3_K_S | ~31GB | 16GB+ | Medium quality |
+| IQ3_M | ~32GB | 18GB+ | Medium quality (I-quant) |
+| Q3_K_M | ~34GB | 20GB+ | Medium-good quality |
+| Q3_K_XL | ~38GB | 24GB+ | Good quality (Q8 embed/output) |
 | Q4_K_S | ~40GB | 24GB+ | Good quality |
 | **Q4_K_M** | **~43GB** | **32GB+** | **Very good (recommended)** |
 | Q4_K_L | ~43GB | 32GB+ | Excellent (Q8 embed/output) |

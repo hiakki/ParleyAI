@@ -109,6 +109,13 @@ class LlamaTransformer:
             "repo": "bartowski/Llama-3.3-70B-Instruct-GGUF",
             "filename": "Llama-3.3-70B-Instruct-Q3_K_M.gguf"
         },
+        "Q3_K_XL": {
+            "size_gb": 38,
+            "quality": "Good quality (Q8 embed/output)",
+            "recommended_ram": "24GB+",
+            "repo": "bartowski/Llama-3.3-70B-Instruct-GGUF",
+            "filename": "Llama-3.3-70B-Instruct-Q3_K_XL.gguf"
+        },
         "Q4_K_S": {
             "size_gb": 40,
             "quality": "Good quality",
@@ -151,12 +158,14 @@ class LlamaTransformer:
         model_path: Optional[str] = None,
         quantization: str = "Q4_K_M",
         n_ctx: int = 2048,
-        n_batch: int = 256,
+        n_batch: int = 512,  # Increased default for faster prompt processing
         n_gpu_layers: int = -1,  # -1 = use all layers on GPU (Metal)
         use_mmap: bool = True,
         use_mlock: bool = False,
         verbose: bool = True,
         cache_dir: Optional[str] = None,
+        flash_attn: bool = True,  # Flash attention for speed
+        offload_kqv: bool = True,  # Offload KV cache to GPU
     ):
         """
         Initialize the Llama transformer.
@@ -165,13 +174,17 @@ class LlamaTransformer:
             model_path: Path to GGUF model file. If None, downloads automatically.
             quantization: Quantization level (Q2_K, Q3_K_S, Q3_K_M, Q4_K_S, IQ2_XXS, IQ2_XS)
             n_ctx: Context window size. Smaller = less RAM. Default 2048.
-            n_batch: Batch size for prompt processing. Default 256.
+            n_batch: Batch size for prompt processing. Default 512 (larger = faster).
             n_gpu_layers: Layers to offload to GPU. -1 = all (recommended for Metal).
             use_mmap: Memory map model file (loads on demand). Default True.
             use_mlock: Lock model in RAM (disable for low RAM). Default False.
             verbose: Print loading progress. Default True.
             cache_dir: Directory to cache downloaded models.
+            flash_attn: Use flash attention for faster inference. Default True.
+            offload_kqv: Offload KV cache to GPU. Default True.
         """
+        self.flash_attn = flash_attn
+        self.offload_kqv = offload_kqv
         self.quantization = quantization
         self.verbose = verbose
         
@@ -215,7 +228,8 @@ class LlamaTransformer:
             print(f"Loading model from: {model_path}")
             print("This may take a few minutes on first load...")
         
-        # Initialize llama.cpp model with memory-efficient settings
+        # Initialize llama.cpp model with optimized settings for Apple Silicon
+        # Note: verbose=False suppresses llama.cpp internal output (1000+ lines)
         self.llm = Llama(
             model_path=model_path,
             n_ctx=n_ctx,
@@ -223,10 +237,25 @@ class LlamaTransformer:
             n_gpu_layers=n_gpu_layers,
             use_mmap=use_mmap,
             use_mlock=use_mlock,
-            verbose=verbose,
-            # Apple Silicon Metal settings
-            n_threads=8,  # M4 has 8 performance cores
-            n_threads_batch=8,
+            verbose=False,
+            
+            # === PERFORMANCE OPTIMIZATIONS ===
+            
+            # Thread settings for Apple Silicon M4
+            # M4 Pro has 10 performance + 4 efficiency cores
+            n_threads=10,          # Use performance cores for generation
+            n_threads_batch=10,    # Use performance cores for batch processing
+            
+            # Flash Attention - faster attention with less memory
+            flash_attn=self.flash_attn,
+            
+            # KV Cache Quantization - significant memory savings
+            # F16 (type 1) is default, Q8_0 (type 4) saves more memory
+            type_k=1,  # GGML_TYPE_F16
+            type_v=1,  # GGML_TYPE_F16
+            
+            # Offload KV cache to GPU for faster inference
+            offload_kqv=self.offload_kqv,
         )
         
         if verbose:
@@ -535,6 +564,7 @@ def get_transformer(
     model_path: Optional[str] = None,
     n_ctx: int = 2048,
     n_gpu_layers: int = -1,
+    n_batch: int = 512,
 ) -> LlamaTransformer:
     """Get or create the transformer singleton (for API server use)."""
     global _transformer_instance
@@ -544,9 +574,12 @@ def get_transformer(
             model_path=model_path,
             quantization=quantization,
             n_ctx=n_ctx,
+            n_batch=n_batch,
             n_gpu_layers=n_gpu_layers,
             use_mmap=True,
             use_mlock=False,
+            flash_attn=True,
+            offload_kqv=True,
         )
     
     return _transformer_instance

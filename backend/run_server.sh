@@ -8,6 +8,7 @@ cd "$SCRIPT_DIR"
 export QUANT="${QUANT:-Q4_K_M}"
 export CTX="${CTX:-2048}"
 export GPU_LAYERS="${GPU_LAYERS:-99}"
+export BATCH_SIZE="${BATCH_SIZE:-512}"  # Larger = faster prompt processing
 export PORT="${PORT:-8000}"
 export MODEL_PATH="${MODEL_PATH:-}"
 

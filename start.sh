@@ -12,7 +12,11 @@ echo ""
 export QUANT="${QUANT:-Q4_K_M}"
 export CTX="${CTX:-2048}"
 export GPU_LAYERS="${GPU_LAYERS:-99}"
+export BATCH_SIZE="${BATCH_SIZE:-512}"
 export MODEL_PATH="${MODEL_PATH:-}"
+BACKEND_PORT="${PORT:-8000}"
+BACKEND_URL="http://localhost:$BACKEND_PORT"
+MAX_WAIT=300  # Max wait time in seconds (5 minutes for large model loading)
 
 # Check backend venv
 if [ ! -d "backend/venv" ]; then
@@ -30,23 +34,55 @@ fi
 
 # Start backend in background
 echo "📡 Starting backend server..."
+echo "   Quantization: $QUANT"
+echo "   Context: $CTX tokens"
+echo "   Batch Size: $BATCH_SIZE"
+echo "   GPU Layers: $GPU_LAYERS"
+[ -n "$MODEL_PATH" ] && echo "   Model Path: $MODEL_PATH"
+echo ""
+
 cd backend
 source venv/bin/activate
 python server.py &
 BACKEND_PID=$!
 cd ..
 
-# Wait for backend to be ready
-echo "   Waiting for backend to initialize..."
-sleep 5
+# Wait for backend to be ready with health check
+echo "⏳ Waiting for backend to load model (this may take 1-3 minutes)..."
+WAIT_TIME=0
+READY=false
 
-# Check if backend is running
-if ! kill -0 $BACKEND_PID 2>/dev/null; then
-    echo "❌ Backend failed to start!"
+while [ $WAIT_TIME -lt $MAX_WAIT ]; do
+    # Check if process is still running
+    if ! kill -0 $BACKEND_PID 2>/dev/null; then
+        echo ""
+        echo "❌ Backend process crashed!"
+        exit 1
+    fi
+    
+    # Try health check
+    if curl -s "$BACKEND_URL/" > /dev/null 2>&1; then
+        READY=true
+        break
+    fi
+    
+    # Show progress every 10 seconds
+    if [ $((WAIT_TIME % 10)) -eq 0 ] && [ $WAIT_TIME -gt 0 ]; then
+        echo "   Still loading... (${WAIT_TIME}s elapsed)"
+    fi
+    
+    sleep 2
+    WAIT_TIME=$((WAIT_TIME + 2))
+done
+
+if [ "$READY" = false ]; then
+    echo ""
+    echo "❌ Backend failed to start within ${MAX_WAIT}s!"
+    kill $BACKEND_PID 2>/dev/null
     exit 1
 fi
 
-echo "   ✓ Backend running on http://localhost:8000"
+echo "   ✓ Backend ready on $BACKEND_URL (took ${WAIT_TIME}s)"
 echo ""
 
 # Start frontend
@@ -55,6 +91,9 @@ cd frontend
 npm run dev &
 FRONTEND_PID=$!
 cd ..
+
+# Wait a moment for frontend to start
+sleep 2
 
 echo ""
 echo "=================================="

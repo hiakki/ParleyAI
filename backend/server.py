@@ -47,6 +47,7 @@ QUANT = os.getenv("QUANT", "Q4_K_M")
 MODEL_PATH_ENV = os.getenv("MODEL_PATH", None)
 CTX = int(os.getenv("CTX", "2048"))
 GPU_LAYERS = int(os.getenv("GPU_LAYERS", "-1"))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "512"))  # Larger batch = faster prompt processing
 
 # Resolve MODEL_PATH - handle directory vs file
 def resolve_model_path(path_env: str | None, quant: str) -> str | None:
@@ -85,7 +86,9 @@ async def lifespan(app: FastAPI):
     logger.info(f"Log file: {log_filename}")
     logger.info(f"Quantization: {QUANT}")
     logger.info(f"Context: {CTX} tokens")
+    logger.info(f"Batch Size: {BATCH_SIZE}")
     logger.info(f"GPU Layers: {GPU_LAYERS}")
+    logger.info(f"Optimizations: Flash Attention ✓, KV Offload ✓")
     if MODEL_PATH:
         logger.info(f"Model Path: {MODEL_PATH}")
     
@@ -95,6 +98,7 @@ async def lifespan(app: FastAPI):
             model_path=MODEL_PATH,
             n_ctx=CTX,
             n_gpu_layers=GPU_LAYERS,
+            n_batch=BATCH_SIZE,
         )
         logger.info("✓ Model loaded successfully!")
     except Exception as e:
