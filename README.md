@@ -252,6 +252,66 @@ On Mac M4 with 48GB RAM:
 
 *First run includes download time (~43-50GB)*
 
+## 📈 Understanding Performance Metrics
+
+The UI displays real-time metrics after each response. Here's what they mean:
+
+```
+⚡ 2.47 tok/s | 📝 9 tokens | ⏱️ 10.6s total
+prompt: 39 tok @ 5.61 tok/s (7.0s) | gen: 9 tok @ 2.47 tok/s (3.6s)
+```
+
+### Prompt Processing (prompt eval)
+
+```
+prompt: 39 tok @ 5.61 tok/s (7.0s)
+```
+
+| Metric | Meaning |
+|--------|---------|
+| **39 tokens** | Your input (system prompt + user message) converted to tokens |
+| **5.61 tok/s** | Speed at which the model *reads and understands* your input |
+| **7.0s** | Total time to process the prompt |
+
+This is the **"thinking" phase** where the model:
+1. Tokenizes your text ("Hello" → `[15496]`)
+2. Runs each token through all 80 transformer layers
+3. Builds internal context/attention for generating a response
+
+### Generation (eval)
+
+```
+gen: 9 tok @ 2.47 tok/s (3.6s)
+```
+
+| Metric | Meaning |
+|--------|---------|
+| **9 tokens** | Number of tokens the model *generated* in its response |
+| **2.47 tok/s** | Speed at which the model *writes* new tokens |
+| **3.6s** | Total time to generate the response |
+
+This is the **"writing" phase** where the model:
+1. Predicts the next token based on context
+2. Appends it to the output
+3. Repeats until done (stop token or max_tokens)
+
+### Why is generation slower than prompt processing?
+
+| Phase | Speed | Reason |
+|-------|-------|--------|
+| **Prompt** | ~5-6 tok/s | Can process tokens in **parallel** (batch processing) |
+| **Generation** | ~2-3 tok/s | Must generate tokens **one at a time** (sequential) |
+
+Generation is inherently sequential—each new token depends on all previous tokens, so the model can't parallelize this phase.
+
+### Visual Timeline
+
+```
+[0s]────────────────────[7.0s]──────────────[10.6s]
+        Prompt (39 tok)         Gen (9 tok)
+        "Understanding"         "Writing"
+```
+
 ## 🔍 Troubleshooting
 
 ### "Out of memory" errors
