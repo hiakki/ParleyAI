@@ -1,0 +1,517 @@
+#!/usr/bin/env python3
+"""
+Llama 3.3 70B Transformer for Mac M4
+
+This implementation uses llama-cpp-python with GGUF quantized models
+to run the massive 70B model on limited RAM through:
+1. Aggressive quantization (Q2_K, Q3_K_S, or Q4_K_S)
+2. Memory mapping (mmap) - loads from disk on demand
+3. Metal GPU acceleration for Apple Silicon
+4. Streaming layer-by-layer processing
+
+Reference: https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct
+"""
+
+import os
+import sys
+from pathlib import Path
+from typing import Generator, Optional
+
+# Check for llama-cpp-python
+try:
+    from llama_cpp import Llama
+except ImportError:
+    print("Error: llama-cpp-python not installed.")
+    print("Install with: pip install llama-cpp-python")
+    print("\nFor Metal GPU support on Mac, install with:")
+    print('CMAKE_ARGS="-DLLAMA_METAL=on" pip install llama-cpp-python --force-reinstall --no-cache-dir')
+    sys.exit(1)
+
+from huggingface_hub import hf_hub_download
+
+
+class LlamaTransformer:
+    """
+    Memory-efficient Llama 3.3 70B transformer for Mac M4.
+    
+    Uses GGUF quantized models with mmap for on-demand loading.
+    Only the actively used portions of the model stay in RAM.
+    """
+    
+    # Quantization options from smallest to largest
+    # For 48GB RAM, Q4_K_M recommended (best quality/size balance)
+    # For 16GB RAM, Q3_K_S or Q2_K recommended
+    QUANT_OPTIONS = {
+        "IQ2_XXS": {
+            "size_gb": 19,
+            "quality": "Extreme quantization, smallest",
+            "recommended_ram": "10GB+",
+            "repo": "bartowski/Llama-3.3-70B-Instruct-GGUF",
+            "filename": "Llama-3.3-70B-Instruct-IQ2_XXS.gguf"
+        },
+        "IQ2_XS": {
+            "size_gb": 21,
+            "quality": "Very aggressive quantization",
+            "recommended_ram": "11GB+",
+            "repo": "bartowski/Llama-3.3-70B-Instruct-GGUF",
+            "filename": "Llama-3.3-70B-Instruct-IQ2_XS.gguf"
+        },
+        "Q2_K": {
+            "size_gb": 26,
+            "quality": "Low quality, small size",
+            "recommended_ram": "12GB+",
+            "repo": "bartowski/Llama-3.3-70B-Instruct-GGUF",
+            "filename": "Llama-3.3-70B-Instruct-Q2_K.gguf"
+        },
+        "Q3_K_S": {
+            "size_gb": 31,
+            "quality": "Medium quality",
+            "recommended_ram": "16GB+",
+            "repo": "bartowski/Llama-3.3-70B-Instruct-GGUF",
+            "filename": "Llama-3.3-70B-Instruct-Q3_K_S.gguf"
+        },
+        "IQ3_M": {
+            "size_gb": 32,
+            "quality": "Medium quality (I-quant)",
+            "recommended_ram": "18GB+",
+            "repo": "bartowski/Llama-3.3-70B-Instruct-GGUF",
+            "filename": "Llama-3.3-70B-Instruct-IQ3_M.gguf"
+        },
+        "Q3_K_M": {
+            "size_gb": 34,
+            "quality": "Medium-good quality",
+            "recommended_ram": "20GB+",
+            "repo": "bartowski/Llama-3.3-70B-Instruct-GGUF",
+            "filename": "Llama-3.3-70B-Instruct-Q3_K_M.gguf"
+        },
+        "Q4_K_S": {
+            "size_gb": 40,
+            "quality": "Good quality",
+            "recommended_ram": "24GB+",
+            "repo": "bartowski/Llama-3.3-70B-Instruct-GGUF",
+            "filename": "Llama-3.3-70B-Instruct-Q4_K_S.gguf"
+        },
+        "Q4_K_M": {
+            "size_gb": 43,
+            "quality": "Very good quality, recommended default",
+            "recommended_ram": "32GB+",
+            "repo": "bartowski/Llama-3.3-70B-Instruct-GGUF",
+            "filename": "Llama-3.3-70B-Instruct-Q4_K_M.gguf"
+        },
+        "Q4_K_L": {
+            "size_gb": 43,
+            "quality": "Excellent quality (Q8 embed/output)",
+            "recommended_ram": "32GB+",
+            "repo": "bartowski/Llama-3.3-70B-Instruct-GGUF",
+            "filename": "Llama-3.3-70B-Instruct-Q4_K_L.gguf"
+        },
+        "Q5_K_S": {
+            "size_gb": 49,
+            "quality": "High quality",
+            "recommended_ram": "48GB+",
+            "repo": "bartowski/Llama-3.3-70B-Instruct-GGUF",
+            "filename": "Llama-3.3-70B-Instruct-Q5_K_S.gguf"
+        },
+        "Q5_K_M": {
+            "size_gb": 50,
+            "quality": "High quality",
+            "recommended_ram": "48GB+",
+            "repo": "bartowski/Llama-3.3-70B-Instruct-GGUF",
+            "filename": "Llama-3.3-70B-Instruct-Q5_K_M.gguf"
+        },
+    }
+    
+    def __init__(
+        self,
+        model_path: Optional[str] = None,
+        quantization: str = "Q4_K_M",
+        n_ctx: int = 2048,
+        n_batch: int = 256,
+        n_gpu_layers: int = -1,  # -1 = use all layers on GPU (Metal)
+        use_mmap: bool = True,
+        use_mlock: bool = False,
+        verbose: bool = True,
+        cache_dir: Optional[str] = None,
+    ):
+        """
+        Initialize the Llama transformer.
+        
+        Args:
+            model_path: Path to GGUF model file. If None, downloads automatically.
+            quantization: Quantization level (Q2_K, Q3_K_S, Q3_K_M, Q4_K_S, IQ2_XXS, IQ2_XS)
+            n_ctx: Context window size. Smaller = less RAM. Default 2048.
+            n_batch: Batch size for prompt processing. Default 256.
+            n_gpu_layers: Layers to offload to GPU. -1 = all (recommended for Metal).
+            use_mmap: Memory map model file (loads on demand). Default True.
+            use_mlock: Lock model in RAM (disable for low RAM). Default False.
+            verbose: Print loading progress. Default True.
+            cache_dir: Directory to cache downloaded models.
+        """
+        self.quantization = quantization
+        self.verbose = verbose
+        
+        if quantization not in self.QUANT_OPTIONS:
+            raise ValueError(
+                f"Unknown quantization: {quantization}. "
+                f"Options: {list(self.QUANT_OPTIONS.keys())}"
+            )
+        
+        quant_info = self.QUANT_OPTIONS[quantization]
+        
+        if verbose:
+            print(f"\n{'='*60}")
+            print(f"Llama 3.3 70B Instruct - {quantization} Quantization")
+            print(f"{'='*60}")
+            print(f"Model size: ~{quant_info['size_gb']}GB")
+            print(f"Quality: {quant_info['quality']}")
+            print(f"Recommended RAM: {quant_info['recommended_ram']}")
+            print(f"Context window: {n_ctx} tokens")
+            print(f"Memory mapping: {'Enabled' if use_mmap else 'Disabled'}")
+            print(f"{'='*60}\n")
+        
+        # Find or download model
+        if model_path is None:
+            # First check for existing model in ~/llama-models (from brew_setup)
+            local_model_dir = Path.home() / "llama-models"
+            local_model_path = local_model_dir / quant_info["filename"]
+            
+            if local_model_path.exists():
+                model_path = str(local_model_path)
+                if verbose:
+                    print(f"✓ Found existing model: {model_path}")
+            else:
+                # Download if not found locally
+                model_path = self._download_model(quant_info, cache_dir)
+        
+        if not Path(model_path).exists():
+            raise FileNotFoundError(f"Model not found: {model_path}")
+        
+        if verbose:
+            print(f"Loading model from: {model_path}")
+            print("This may take a few minutes on first load...")
+        
+        # Initialize llama.cpp model with memory-efficient settings
+        self.llm = Llama(
+            model_path=model_path,
+            n_ctx=n_ctx,
+            n_batch=n_batch,
+            n_gpu_layers=n_gpu_layers,
+            use_mmap=use_mmap,
+            use_mlock=use_mlock,
+            verbose=verbose,
+            # Apple Silicon Metal settings
+            n_threads=8,  # M4 has 8 performance cores
+            n_threads_batch=8,
+        )
+        
+        if verbose:
+            print("\n✓ Model loaded successfully!")
+            print(f"  Using Metal GPU acceleration: {'Yes' if n_gpu_layers != 0 else 'No'}")
+    
+    def _download_model(self, quant_info: dict, cache_dir: Optional[str]) -> str:
+        """Download the GGUF model from Hugging Face."""
+        if self.verbose:
+            print("\n" + "=" * 60)
+            print("📥 DOWNLOADING MODEL - THIS WILL TAKE A WHILE!")
+            print("=" * 60)
+            print(f"File: {quant_info['filename']}")
+            print(f"From: {quant_info['repo']}")
+            print(f"Size: ~{quant_info['size_gb']}GB")
+            print("")
+            print("⏳ Estimated time: 10-30 minutes (depends on internet)")
+            print("   Progress bar will appear below...")
+            print("   DO NOT close this window!")
+            print("=" * 60 + "\n")
+        
+        # Use default HF cache or custom directory
+        if cache_dir:
+            os.makedirs(cache_dir, exist_ok=True)
+        
+        model_path = hf_hub_download(
+            repo_id=quant_info["repo"],
+            filename=quant_info["filename"],
+            cache_dir=cache_dir,
+        )
+        
+        return model_path
+    
+    def generate(
+        self,
+        prompt: str,
+        max_tokens: int = 512,
+        temperature: float = 0.7,
+        top_p: float = 0.9,
+        top_k: int = 40,
+        repeat_penalty: float = 1.1,
+        stop: Optional[list] = None,
+        stream: bool = False,
+    ) -> str | Generator[str, None, None]:
+        """
+        Generate text from a prompt.
+        
+        Args:
+            prompt: Input text prompt
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature (0.0 = deterministic)
+            top_p: Nucleus sampling threshold
+            top_k: Top-k sampling
+            repeat_penalty: Penalty for repetition
+            stop: Stop sequences
+            stream: If True, yields tokens as they're generated
+            
+        Returns:
+            Generated text or generator if streaming
+        """
+        if stream:
+            return self._generate_stream(
+                prompt, max_tokens, temperature, top_p, top_k, repeat_penalty, stop
+            )
+        
+        output = self.llm(
+            prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            repeat_penalty=repeat_penalty,
+            stop=stop or [],
+            echo=False,
+        )
+        
+        return output["choices"][0]["text"]
+    
+    def _generate_stream(
+        self,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        top_k: int,
+        repeat_penalty: float,
+        stop: Optional[list],
+    ) -> Generator[str, None, None]:
+        """Stream tokens as they're generated."""
+        for output in self.llm(
+            prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            repeat_penalty=repeat_penalty,
+            stop=stop or [],
+            echo=False,
+            stream=True,
+        ):
+            yield output["choices"][0]["text"]
+    
+    def chat(
+        self,
+        messages: list[dict],
+        max_tokens: int = 512,
+        temperature: float = 0.7,
+        stream: bool = False,
+    ) -> str | Generator[str, None, None]:
+        """
+        Chat completion with Llama 3.3 format.
+        
+        Args:
+            messages: List of {"role": "user/assistant/system", "content": "..."}
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature
+            stream: If True, yields tokens as generated
+            
+        Returns:
+            Assistant response or generator if streaming
+        """
+        # Format messages for Llama 3.3 chat template
+        prompt = self._format_chat_prompt(messages)
+        
+        return self.generate(
+            prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stream=stream,
+            stop=["<|eot_id|>", "<|end_of_text|>"],
+        )
+    
+    def _format_chat_prompt(self, messages: list[dict]) -> str:
+        """Format messages using Llama 3.3 chat template."""
+        # Note: llama.cpp adds <|begin_of_text|> automatically, don't duplicate
+        prompt = ""
+        
+        for msg in messages:
+            role = msg["role"]
+            content = msg["content"]
+            
+            if role == "system":
+                prompt += f"<|start_header_id|>system<|end_header_id|>\n\n{content}<|eot_id|>"
+            elif role == "user":
+                prompt += f"<|start_header_id|>user<|end_header_id|>\n\n{content}<|eot_id|>"
+            elif role == "assistant":
+                prompt += f"<|start_header_id|>assistant<|end_header_id|>\n\n{content}<|eot_id|>"
+        
+        # Add assistant header for generation
+        prompt += "<|start_header_id|>assistant<|end_header_id|>\n\n"
+        
+        return prompt
+    
+    @classmethod
+    def list_quantizations(cls):
+        """Print available quantization options."""
+        print("\nAvailable Quantization Options:")
+        print("=" * 70)
+        print(f"{'Quant':<10} {'Size':<10} {'RAM Needed':<12} {'Quality'}")
+        print("-" * 70)
+        
+        for name, info in sorted(cls.QUANT_OPTIONS.items(), key=lambda x: x[1]["size_gb"]):
+            print(f"{name:<10} {info['size_gb']}GB{'':<6} {info['recommended_ram']:<12} {info['quality']}")
+        
+        print("-" * 70)
+        print("\n✓ Recommended for 48GB RAM: Q4_K_M (best balance)")
+        print("✓ Recommended for 16GB RAM: Q3_K_S or Q2_K")
+        print("  These use mmap to stream model layers from disk as needed.\n")
+
+
+# Singleton instance for the API server
+_transformer_instance: Optional[LlamaTransformer] = None
+
+
+def get_transformer(
+    quantization: str = "Q4_K_M",
+    model_path: Optional[str] = None,
+    n_ctx: int = 2048,
+    n_gpu_layers: int = -1,
+) -> LlamaTransformer:
+    """Get or create the transformer singleton (for API server use)."""
+    global _transformer_instance
+    
+    if _transformer_instance is None:
+        _transformer_instance = LlamaTransformer(
+            model_path=model_path,
+            quantization=quantization,
+            n_ctx=n_ctx,
+            n_gpu_layers=n_gpu_layers,
+            use_mmap=True,
+            use_mlock=False,
+        )
+    
+    return _transformer_instance
+
+
+def main():
+    """Example usage of LlamaTransformer."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        description="Run Llama 3.3 70B on Mac M4"
+    )
+    parser.add_argument(
+        "--quant", "-q",
+        default="Q4_K_M",
+        choices=list(LlamaTransformer.QUANT_OPTIONS.keys()),
+        help="Quantization level (default: Q4_K_M)"
+    )
+    parser.add_argument(
+        "--ctx", "-c",
+        type=int,
+        default=2048,
+        help="Context window size (default: 2048, use smaller for less RAM)"
+    )
+    parser.add_argument(
+        "--model-path", "-m",
+        type=str,
+        default=None,
+        help="Path to GGUF model file (downloads if not provided)"
+    )
+    parser.add_argument(
+        "--list-quants",
+        action="store_true",
+        help="List available quantization options and exit"
+    )
+    parser.add_argument(
+        "--interactive", "-i",
+        action="store_true",
+        help="Run in interactive chat mode"
+    )
+    parser.add_argument(
+        "--gpu-layers", "-g",
+        type=int,
+        default=-1,
+        help="Number of layers to offload to GPU (-1 = all, reduce if OOM)"
+    )
+    
+    args = parser.parse_args()
+    
+    if args.list_quants:
+        LlamaTransformer.list_quantizations()
+        return
+    
+    # Memory-efficient settings
+    print("\n🦙 Initializing Llama 3.3 70B for Mac M4...\n")
+    
+    transformer = LlamaTransformer(
+        model_path=args.model_path,
+        quantization=args.quant,
+        n_ctx=args.ctx,
+        n_batch=256,
+        n_gpu_layers=args.gpu_layers,  # Use Metal GPU (-1 = all layers)
+        use_mmap=True,                 # Critical: stream from disk
+        use_mlock=False,               # Don't lock in RAM
+    )
+    
+    if args.interactive:
+        # Interactive chat mode
+        print("\n" + "=" * 60)
+        print("Interactive Chat Mode (type 'quit' to exit)")
+        print("=" * 60 + "\n")
+        
+        messages = [
+            {"role": "system", "content": "You are a helpful AI assistant."}
+        ]
+        
+        while True:
+            try:
+                user_input = input("\nYou: ").strip()
+                if user_input.lower() in ["quit", "exit", "q"]:
+                    print("\nGoodbye! 👋")
+                    break
+                if not user_input:
+                    continue
+                
+                messages.append({"role": "user", "content": user_input})
+                
+                print("\nAssistant: ", end="", flush=True)
+                
+                # Stream response
+                full_response = ""
+                for token in transformer.chat(messages, stream=True):
+                    print(token, end="", flush=True)
+                    full_response += token
+                
+                print()  # Newline after response
+                
+                messages.append({"role": "assistant", "content": full_response})
+                
+            except KeyboardInterrupt:
+                print("\n\nInterrupted. Goodbye! 👋")
+                break
+    else:
+        # Single prompt demo
+        print("\n--- Demo Generation ---\n")
+        
+        messages = [
+            {"role": "system", "content": "You are a helpful AI assistant."},
+            {"role": "user", "content": "Explain quantum computing in simple terms."}
+        ]
+        
+        print("Prompt: Explain quantum computing in simple terms.\n")
+        print("Response: ", end="", flush=True)
+        
+        for token in transformer.chat(messages, stream=True):
+            print(token, end="", flush=True)
+        
+        print("\n")
+
+
+if __name__ == "__main__":
+    main()
