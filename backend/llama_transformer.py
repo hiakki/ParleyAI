@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 """
-Llama 3.3 70B Transformer for Mac M4
+ParleyAI — Local GGUF Transformer Engine
 
-This implementation uses llama-cpp-python with GGUF quantized models
-to run the massive 70B model on limited RAM through:
-1. Aggressive quantization (Q2_K, Q3_K_S, or Q4_K_S)
+Supports Llama 3.3 70B, LFM2-24B, and other GGUF models.
+Uses llama-cpp-python (in-process) or llama-server (subprocess) to
+run large models on limited RAM through:
+1. Aggressive quantization (Q2_K, Q3_K_S, Q4_K_M, etc.)
 2. Memory mapping (mmap) - loads from disk on demand
-3. Metal GPU acceleration for Apple Silicon
+3. Metal GPU acceleration for Apple Silicon (or CUDA on Windows)
 4. Streaming layer-by-layer processing
 
-Reference: https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct
+Supported model families:
+- llama_70b: Llama 3.3 70B Instruct (bartowski GGUF) — 48GB+ RAM recommended
+- lfm2_24b:  LFM2-24B-A2B (Liquid AI) — fits in 30–35GB RAM, ChatML format
+
+References:
+- https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct
+- https://huggingface.co/LiquidAI/LFM2-24B-A2B
 """
 
 import os
@@ -55,19 +62,14 @@ class PerfMetrics:
         }
 
 
-class LlamaTransformer:
-    """
-    Memory-efficient Llama 3.3 70B transformer for Mac M4.
-    
-    Uses GGUF quantized models with mmap for on-demand loading.
-    Only the actively used portions of the model stay in RAM.
-    """
-    
-    # Quantization options from smallest to largest
-    # Full list from: https://huggingface.co/bartowski/Llama-3.3-70B-Instruct-GGUF
-    # For 48GB RAM, Q4_K_M recommended (best quality/size balance)
-    # For 16GB RAM, Q3_K_S or Q2_K recommended
-    QUANT_OPTIONS = {
+# Model families: each has display name, chat template type, and quantization options.
+# llama_70b: 48GB+ RAM recommended. lfm2_24b: fits in 30–35GB RAM (Liquid AI LFM2).
+MODEL_FAMILIES = {
+    "llama_70b": {
+        "name": "Llama 3.3 70B Instruct",
+        "chat_template": "llama",
+        "use_server": False,
+        "quants": {
         # ============ 1-bit quantization ============
         "IQ1_M": {
             "size_gb": 17,
@@ -286,12 +288,88 @@ class LlamaTransformer:
             "repo": "bartowski/Llama-3.3-70B-Instruct-GGUF",
             "filename": "Llama-3.3-70B-Instruct-f16.gguf"
         },
-    }
+        },
+    },
+    # LFM2-24B-A2B: 24B total, 2B active params. Fits in 32GB. ChatML format.
+    # Uses llama-server subprocess because lfm2moe isn't in PyPI llama-cpp-python yet.
+    # https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF
+    "lfm2_24b": {
+        "name": "LFM2-24B-A2B",
+        "chat_template": "chatml",
+        "use_server": True,
+        "quants": {
+            "Q4_0": {
+                "size_gb": 14,
+                "quality": "Good quality, smallest LFM2 option",
+                "recommended_ram": "20GB+",
+                "repo": "LiquidAI/LFM2-24B-A2B-GGUF",
+                "filename": "LFM2-24B-A2B-Q4_0.gguf"
+            },
+            "Q4_K_M": {
+                "size_gb": 15,
+                "quality": "Very good quality, recommended for 30–35GB RAM",
+                "recommended_ram": "32GB+",
+                "repo": "LiquidAI/LFM2-24B-A2B-GGUF",
+                "filename": "LFM2-24B-A2B-Q4_K_M.gguf"
+            },
+            "Q5_K_M": {
+                "size_gb": 17,
+                "quality": "High quality",
+                "recommended_ram": "32GB+",
+                "repo": "LiquidAI/LFM2-24B-A2B-GGUF",
+                "filename": "LFM2-24B-A2B-Q5_K_M.gguf"
+            },
+            "Q6_K": {
+                "size_gb": 20,
+                "quality": "Very high quality",
+                "recommended_ram": "32GB+",
+                "repo": "LiquidAI/LFM2-24B-A2B-GGUF",
+                "filename": "LFM2-24B-A2B-Q6_K.gguf"
+            },
+            "Q8_0": {
+                "size_gb": 26,
+                "quality": "Extremely high quality",
+                "recommended_ram": "35GB+",
+                "repo": "LiquidAI/LFM2-24B-A2B-GGUF",
+                "filename": "LFM2-24B-A2B-Q8_0.gguf"
+            },
+            "BF16": {
+                "size_gb": 48,
+                "quality": "BF16 weights",
+                "recommended_ram": "56GB+",
+                "repo": "LiquidAI/LFM2-24B-A2B-GGUF",
+                "filename": "LFM2-24B-A2B-BF16.gguf"
+            },
+            "F16": {
+                "size_gb": 48,
+                "quality": "Full F16 weights",
+                "recommended_ram": "56GB+",
+                "repo": "LiquidAI/LFM2-24B-A2B-GGUF",
+                "filename": "LFM2-24B-A2B-F16.gguf"
+            },
+        },
+    },
+}
+
+
+class LlamaTransformer:
+    """
+    Memory-efficient transformer for Llama 3.3 70B or LFM2-24B (GGUF).
+    
+    Uses GGUF quantized models with mmap for on-demand loading.
+    Only the actively used portions of the model stay in RAM.
+    """
+    
+    MODEL_FAMILIES = MODEL_FAMILIES
+    
+    # Backward compatibility: default family quants (llama_70b)
+    QUANT_OPTIONS = MODEL_FAMILIES["llama_70b"]["quants"]
     
     def __init__(
         self,
         model_path: Optional[str] = None,
         quantization: str = "Q4_K_M",
+        model_family: str = "llama_70b",
         n_ctx: int = 2048,
         n_batch: int = 512,  # Increased default for faster prompt processing
         n_gpu_layers: int = -1,  # -1 = use all layers on GPU (Metal)
@@ -307,7 +385,8 @@ class LlamaTransformer:
         
         Args:
             model_path: Path to GGUF model file. If None, downloads automatically.
-            quantization: Quantization level (Q2_K, Q3_K_S, Q3_K_M, Q4_K_S, IQ2_XXS, IQ2_XS)
+            quantization: Quantization level (depends on model_family; e.g. Q4_K_M).
+            model_family: "llama_70b" (Llama 3.3 70B) or "lfm2_24b" (LFM2-24B-A2B, 30–35GB RAM).
             n_ctx: Context window size. Smaller = less RAM. Default 2048.
             n_batch: Batch size for prompt processing. Default 512 (larger = faster).
             n_gpu_layers: Layers to offload to GPU. -1 = all (recommended for Metal).
@@ -321,19 +400,30 @@ class LlamaTransformer:
         self.flash_attn = flash_attn
         self.offload_kqv = offload_kqv
         self.quantization = quantization
+        self.model_family = model_family
         self.verbose = verbose
         
-        if quantization not in self.QUANT_OPTIONS:
+        if model_family not in MODEL_FAMILIES:
             raise ValueError(
-                f"Unknown quantization: {quantization}. "
-                f"Options: {list(self.QUANT_OPTIONS.keys())}"
+                f"Unknown model_family: {model_family}. "
+                f"Options: {list(MODEL_FAMILIES.keys())}"
+            )
+        family_info = MODEL_FAMILIES[model_family]
+        self._quant_options = family_info["quants"]
+        self._chat_template = family_info["chat_template"]
+        self._family_name = family_info["name"]
+        
+        if quantization not in self._quant_options:
+            raise ValueError(
+                f"Unknown quantization for {model_family}: {quantization}. "
+                f"Options: {list(self._quant_options.keys())}"
             )
         
-        quant_info = self.QUANT_OPTIONS[quantization]
+        quant_info = self._quant_options[quantization]
         
         if verbose:
             print(f"\n{'='*60}")
-            print(f"Llama 3.3 70B Instruct - {quantization} Quantization")
+            print(f"{self._family_name} - {quantization} Quantization")
             print(f"{'='*60}")
             print(f"Model size: ~{quant_info['size_gb']}GB")
             print(f"Quality: {quant_info['quality']}")
@@ -363,35 +453,47 @@ class LlamaTransformer:
             print(f"Loading model from: {model_path}")
             print("This may take a few minutes on first load...")
         
-        # Initialize llama.cpp model with optimized settings for Apple Silicon
-        # Note: verbose=False suppresses llama.cpp internal output (1000+ lines)
-        self.llm = Llama(
-            model_path=model_path,
-            n_ctx=n_ctx,
-            n_batch=n_batch,
-            n_gpu_layers=n_gpu_layers,
-            use_mmap=use_mmap,
-            use_mlock=use_mlock,
-            verbose=False,
-            
-            # === PERFORMANCE OPTIMIZATIONS ===
-            
-            # Thread settings for Apple Silicon M4
-            # M4 Pro has 10 performance + 4 efficiency cores
-            n_threads=10,          # Use performance cores for generation
-            n_threads_batch=10,    # Use performance cores for batch processing
-            
-            # Flash Attention - faster attention with less memory
-            flash_attn=self.flash_attn,
-            
-            # KV Cache Quantization - significant memory savings
-            # F16 (type 1) is default, Q8_0 (type 4) saves more memory
-            type_k=1,  # GGML_TYPE_F16
-            type_v=1,  # GGML_TYPE_F16
-            
-            # Offload KV cache to GPU for faster inference
-            offload_kqv=self.offload_kqv,
-        )
+        try:
+            # Initialize llama.cpp model with optimized settings for Apple Silicon
+            # Note: verbose=False suppresses llama.cpp internal output (1000+ lines)
+            self.llm = Llama(
+                model_path=model_path,
+                n_ctx=n_ctx,
+                n_batch=n_batch,
+                n_gpu_layers=n_gpu_layers,
+                use_mmap=use_mmap,
+                use_mlock=use_mlock,
+                verbose=False,
+                
+                # === PERFORMANCE OPTIMIZATIONS ===
+                
+                # Thread settings for Apple Silicon M4
+                # M4 Pro has 10 performance + 4 efficiency cores
+                n_threads=10,          # Use performance cores for generation
+                n_threads_batch=10,    # Use performance cores for batch processing
+                
+                # Flash Attention - faster attention with less memory
+                flash_attn=self.flash_attn,
+                
+                # KV Cache Quantization - significant memory savings
+                # F16 (type 1) is default, Q8_0 (type 4) saves more memory
+                type_k=1,  # GGML_TYPE_F16
+                type_v=1,  # GGML_TYPE_F16
+                
+                # Offload KV cache to GPU for faster inference
+                offload_kqv=self.offload_kqv,
+            )
+        except Exception as e:
+            err_msg = str(e).strip()
+            if self.model_family != "llama_70b" and ("failed to load" in err_msg.lower() or "unknown model architecture" in err_msg.lower()):
+                raise RuntimeError(
+                    f"{err_msg}\n\n"
+                    f"The '{self.model_family}' architecture may not be supported by the "
+                    "bundled llama-cpp-python. Set use_server=True in MODEL_FAMILIES "
+                    "for this family so it runs via llama-server subprocess instead.\n"
+                    "See README 'LFM2: llama-server not found' for details."
+                ) from e
+            raise
         
         if verbose:
             print("\n✓ Model loaded successfully!")
@@ -653,61 +755,416 @@ class LlamaTransformer:
         yield (None, metrics)
     
     def _format_chat_prompt(self, messages: list[dict]) -> str:
+        """Format messages using the model family's chat template (Llama 3.3 or ChatML)."""
+        if self._chat_template == "chatml":
+            return self._format_chat_prompt_chatml(messages)
+        return self._format_chat_prompt_llama(messages)
+    
+    def _format_chat_prompt_llama(self, messages: list[dict]) -> str:
         """Format messages using Llama 3.3 chat template."""
-        # Note: llama.cpp adds <|begin_of_text|> automatically, don't duplicate
         prompt = ""
-        
         for msg in messages:
             role = msg["role"]
             content = msg["content"]
-            
             if role == "system":
                 prompt += f"<|start_header_id|>system<|end_header_id|>\n\n{content}<|eot_id|>"
             elif role == "user":
                 prompt += f"<|start_header_id|>user<|end_header_id|>\n\n{content}<|eot_id|>"
             elif role == "assistant":
                 prompt += f"<|start_header_id|>assistant<|end_header_id|>\n\n{content}<|eot_id|>"
-        
-        # Add assistant header for generation
         prompt += "<|start_header_id|>assistant<|end_header_id|>\n\n"
-        
+        return prompt
+    
+    def _format_chat_prompt_chatml(self, messages: list[dict]) -> str:
+        """Format messages using ChatML (LFM2 / Liquid AI). <|im_start|>role\\ncontent<|im_end|>"""
+        # LFM2 uses <|startoftext|> then ChatML blocks. See LiquidAI/LFM2-24B-A2B model card.
+        prompt = "<|startoftext|>"
+        for msg in messages:
+            role = msg["role"]
+            content = msg["content"]
+            prompt += f"<|im_start|>{role}\n{content}<|im_end|>\n"
+        prompt += "<|im_start|>assistant\n"
         return prompt
     
     @classmethod
-    def list_quantizations(cls):
-        """Print available quantization options."""
-        print("\nAvailable Quantization Options:")
+    def list_quantizations(cls, model_family: str = "llama_70b"):
+        """Print available quantization options for a model family."""
+        if model_family not in MODEL_FAMILIES:
+            print(f"Unknown model_family: {model_family}. Options: {list(MODEL_FAMILIES.keys())}")
+            return
+        quants = MODEL_FAMILIES[model_family]["quants"]
+        name = MODEL_FAMILIES[model_family]["name"]
+        print(f"\n{name} - Quantization Options:")
         print("=" * 70)
         print(f"{'Quant':<10} {'Size':<10} {'RAM Needed':<12} {'Quality'}")
         print("-" * 70)
-        
-        for name, info in sorted(cls.QUANT_OPTIONS.items(), key=lambda x: x[1]["size_gb"]):
-            print(f"{name:<10} {info['size_gb']}GB{'':<6} {info['recommended_ram']:<12} {info['quality']}")
-        
+        for qname, info in sorted(quants.items(), key=lambda x: x[1]["size_gb"]):
+            print(f"{qname:<10} {info['size_gb']}GB{'':<6} {info['recommended_ram']:<12} {info['quality']}")
         print("-" * 70)
-        print("\n✓ Recommended for 48GB RAM: Q4_K_M (best balance)")
-        print("✓ Recommended for 16GB RAM: Q3_K_S or Q2_K")
-        print("  These use mmap to stream model layers from disk as needed.\n")
+        if model_family == "llama_70b":
+            print("\n✓ Recommended for 48GB RAM: Q4_K_M (best balance)")
+            print("✓ Recommended for 16GB RAM: Q3_K_S or Q2_K")
+        else:
+            print("\n✓ Recommended for 30–35GB RAM: Q4_K_M or Q5_K_M")
+        print("  Use mmap to stream model layers from disk as needed.\n")
 
 
-# Singleton instance for the API server
-_transformer_instance: Optional[LlamaTransformer] = None
+# ---------------------------------------------------------------------------
+# LlamaServerTransformer: uses brew's llama-server subprocess (OpenAI API)
+# Required for model families whose architecture isn't in llama-cpp-python yet
+# (e.g. lfm2moe / LFM2-24B). llama-server from brew/source has full support.
+#
+# Memory-efficient: llama-server is started on first request and automatically
+# shut down after IDLE_TIMEOUT_S of inactivity, freeing all RAM/VRAM. It
+# restarts transparently on the next request.
+# ---------------------------------------------------------------------------
+
+import shutil
+import subprocess
+import json as _json
+import urllib.request
+import urllib.error
+import atexit
+import signal
+import threading
+
+
+class LlamaServerTransformer:
+    """
+    Wraps an external ``llama-server`` process and talks to its OpenAI-compatible
+    HTTP API.  Same public interface as LlamaTransformer (chat, chat_with_metrics).
+
+    The subprocess is started lazily on the first request and stopped after
+    ``idle_timeout`` seconds of inactivity so RAM/VRAM is freed when not in use.
+    """
+
+    LLAMA_SERVER_PORT = 8012
+    IDLE_TIMEOUT_S = int(os.getenv("LFM_IDLE_TIMEOUT", "300"))  # 5 min default
+
+    def __init__(
+        self,
+        model_path: str,
+        model_family: str = "lfm2_24b",
+        quantization: str = "Q4_K_M",
+        n_ctx: int = 2048,
+        n_gpu_layers: int = -1,
+        n_batch: int = 512,
+        verbose: bool = True,
+    ):
+        self.model_family = model_family
+        self.quantization = quantization
+        self.verbose = verbose
+        self._base_url = f"http://127.0.0.1:{self.LLAMA_SERVER_PORT}"
+
+        family_info = MODEL_FAMILIES[model_family]
+        self._family_name = family_info["name"]
+
+        self._llama_server_bin = shutil.which("llama-server")
+        if self._llama_server_bin is None:
+            raise RuntimeError(
+                "llama-server not found on PATH. "
+                "Install via: brew install llama.cpp  (macOS) or download from "
+                "https://github.com/ggml-org/llama.cpp/releases"
+            )
+
+        if not Path(model_path).exists():
+            raise FileNotFoundError(f"Model not found: {model_path}")
+
+        self._cmd = [
+            self._llama_server_bin,
+            "-m", model_path,
+            "-c", str(n_ctx),
+            "-ngl", str(n_gpu_layers),
+            "-b", str(n_batch),
+            "--port", str(self.LLAMA_SERVER_PORT),
+            "--host", "127.0.0.1",
+        ]
+
+        self._process: Optional[subprocess.Popen] = None
+        self._lock = threading.Lock()
+        self._idle_timer: Optional[threading.Timer] = None
+
+        atexit.register(self.shutdown)
+
+        if verbose:
+            print(f"\n{'='*60}")
+            print(f"{self._family_name} - {quantization} (via llama-server)")
+            print(f"{'='*60}")
+            print(f"Model: {model_path}")
+            print(f"Context: {n_ctx}  GPU layers: {n_gpu_layers}")
+            print(f"Idle timeout: {self.IDLE_TIMEOUT_S}s (set LFM_IDLE_TIMEOUT to change)")
+            print(f"llama-server port: {self.LLAMA_SERVER_PORT}")
+            print(f"{'='*60}")
+            print("✓ Ready (llama-server will start on first request)\n")
+
+    # ------------------------------------------------------------------
+    # Lifecycle: lazy start, idle shutdown
+    # ------------------------------------------------------------------
+
+    def _ensure_running(self):
+        """Start llama-server if not already running. Thread-safe."""
+        with self._lock:
+            self._cancel_idle_timer()
+            if self._process and self._process.poll() is None:
+                return
+            if self.verbose:
+                print("⏳ Starting llama-server (model loading)...")
+            self._process = subprocess.Popen(
+                self._cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+            if not self._wait_for_ready(timeout=300):
+                self.shutdown()
+                raise RuntimeError("llama-server failed to start within timeout")
+            if self.verbose:
+                print("✓ llama-server ready!")
+
+    def _mark_idle(self):
+        """Reset the idle timer after a request completes."""
+        with self._lock:
+            self._cancel_idle_timer()
+            if self.IDLE_TIMEOUT_S > 0:
+                self._idle_timer = threading.Timer(
+                    self.IDLE_TIMEOUT_S, self._idle_shutdown
+                )
+                self._idle_timer.daemon = True
+                self._idle_timer.start()
+
+    def _cancel_idle_timer(self):
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+            self._idle_timer = None
+
+    def _idle_shutdown(self):
+        if self.verbose:
+            print(f"💤 No requests for {self.IDLE_TIMEOUT_S}s — stopping llama-server to free RAM")
+        self.shutdown()
+
+    def _wait_for_ready(self, timeout: int = 300) -> bool:
+        import time as _time
+        deadline = _time.monotonic() + timeout
+        while _time.monotonic() < deadline:
+            if self._process and self._process.poll() is not None:
+                return False
+            try:
+                req = urllib.request.Request(f"{self._base_url}/health")
+                with urllib.request.urlopen(req, timeout=2) as resp:
+                    if resp.status == 200:
+                        return True
+            except (urllib.error.URLError, OSError):
+                pass
+            _time.sleep(2)
+        return False
+
+    def shutdown(self):
+        with self._lock:
+            self._cancel_idle_timer()
+            if self._process and self._process.poll() is None:
+                self._process.send_signal(signal.SIGTERM)
+                try:
+                    self._process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    self._process.kill()
+                if self.verbose:
+                    print("✓ llama-server stopped")
+            self._process = None
+
+    # ------------------------------------------------------------------
+    # Public API — same signatures as LlamaTransformer
+    # ------------------------------------------------------------------
+
+    def chat(
+        self,
+        messages: list[dict],
+        max_tokens: int = 512,
+        temperature: float = 0.7,
+        stream: bool = False,
+    ) -> str | Generator[str, None, None]:
+        self._ensure_running()
+        try:
+            if stream:
+                return self._chat_stream(messages, max_tokens, temperature)
+            body = _json.dumps({
+                "model": self._family_name,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "stream": False,
+            }).encode()
+            req = urllib.request.Request(
+                f"{self._base_url}/v1/chat/completions",
+                data=body,
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                data = _json.loads(resp.read())
+            return data["choices"][0]["message"]["content"]
+        finally:
+            self._mark_idle()
+
+    def _chat_stream(
+        self, messages: list[dict], max_tokens: int, temperature: float,
+    ) -> Generator[str, None, None]:
+        body = _json.dumps({
+            "model": self._family_name,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": True,
+        }).encode()
+        req = urllib.request.Request(
+            f"{self._base_url}/v1/chat/completions",
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                for raw_line in resp:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line.startswith("data: "):
+                        continue
+                    payload = line[6:]
+                    if payload == "[DONE]":
+                        break
+                    chunk = _json.loads(payload)
+                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    token = delta.get("content", "")
+                    if token:
+                        yield token
+        finally:
+            self._mark_idle()
+
+    def chat_with_metrics(
+        self,
+        messages: list[dict],
+        max_tokens: int = 512,
+        temperature: float = 0.7,
+    ) -> Generator[tuple[str | None, PerfMetrics | None], None, None]:
+        self._ensure_running()
+        start_time = time.perf_counter()
+        first_token_time = None
+        token_count = 0
+        prompt_tokens = 0
+        completion_tokens = 0
+
+        body = _json.dumps({
+            "model": self._family_name,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": True,
+        }).encode()
+        req = urllib.request.Request(
+            f"{self._base_url}/v1/chat/completions",
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                for raw_line in resp:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line.startswith("data: "):
+                        continue
+                    payload = line[6:]
+                    if payload == "[DONE]":
+                        break
+                    chunk = _json.loads(payload)
+                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    token = delta.get("content", "")
+                    if token:
+                        if first_token_time is None:
+                            first_token_time = time.perf_counter()
+                        token_count += 1
+                        yield (token, None)
+                    usage = chunk.get("usage")
+                    if usage:
+                        prompt_tokens = usage.get("prompt_tokens", 0)
+                        completion_tokens = usage.get("completion_tokens", 0)
+        finally:
+            self._mark_idle()
+
+        end_time = time.perf_counter()
+        total_ms = (end_time - start_time) * 1000
+        prompt_ms = ((first_token_time or end_time) - start_time) * 1000
+        completion_ms = (end_time - (first_token_time or start_time)) * 1000
+        tokens_per_second = (token_count / completion_ms * 1000) if completion_ms > 0 else 0
+        prompt_per_second = (prompt_tokens / prompt_ms * 1000) if prompt_ms > 0 and prompt_tokens else 0
+
+        yield (None, PerfMetrics(
+            prompt_tokens=prompt_tokens or len(str(messages)) // 4,
+            completion_tokens=completion_tokens or token_count,
+            total_time_ms=total_ms,
+            prompt_eval_time_ms=prompt_ms,
+            completion_time_ms=completion_ms,
+            tokens_per_second=tokens_per_second,
+            prompt_per_second=prompt_per_second,
+        ))
+
+    def generate(self, prompt: str, **kwargs):
+        return self.chat([{"role": "user", "content": prompt}], **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Singleton factory
+# ---------------------------------------------------------------------------
+
+_transformer_instance = None
 
 
 def get_transformer(
     quantization: str = "Q4_K_M",
     model_path: Optional[str] = None,
+    model_family: str = "llama_70b",
     n_ctx: int = 2048,
     n_gpu_layers: int = -1,
     n_batch: int = 512,
-) -> LlamaTransformer:
-    """Get or create the transformer singleton (for API server use)."""
+):
+    """Get or create the transformer singleton.
+
+    Uses LlamaTransformer (in-process llama-cpp-python) for llama_70b,
+    and LlamaServerTransformer (external llama-server subprocess) for
+    families whose architecture isn't yet in the PyPI llama-cpp-python
+    (e.g. lfm2_24b / lfm2moe).
+    """
     global _transformer_instance
-    
-    if _transformer_instance is None:
+
+    if _transformer_instance is not None:
+        return _transformer_instance
+
+    family_info = MODEL_FAMILIES.get(model_family, {})
+    use_server = family_info.get("use_server", False)
+
+    if use_server:
+        quant_info = family_info["quants"].get(quantization)
+        if quant_info is None:
+            raise ValueError(
+                f"Unknown quantization for {model_family}: {quantization}. "
+                f"Options: {list(family_info['quants'].keys())}"
+            )
+        if model_path is None:
+            local_dir = Path.home() / "llama-models"
+            local_path = local_dir / quant_info["filename"]
+            if local_path.exists():
+                model_path = str(local_path)
+            else:
+                model_path = hf_hub_download(
+                    repo_id=quant_info["repo"],
+                    filename=quant_info["filename"],
+                )
+        _transformer_instance = LlamaServerTransformer(
+            model_path=model_path,
+            model_family=model_family,
+            quantization=quantization,
+            n_ctx=n_ctx,
+            n_gpu_layers=n_gpu_layers,
+            n_batch=n_batch,
+        )
+    else:
         _transformer_instance = LlamaTransformer(
             model_path=model_path,
             quantization=quantization,
+            model_family=model_family,
             n_ctx=n_ctx,
             n_batch=n_batch,
             n_gpu_layers=n_gpu_layers,
@@ -716,7 +1173,7 @@ def get_transformer(
             flash_attn=True,
             offload_kqv=True,
         )
-    
+
     return _transformer_instance
 
 
@@ -725,13 +1182,18 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(
-        description="Run Llama 3.3 70B on Mac M4"
+        description="ParleyAI — run Llama 3.3 70B or LFM2-24B locally (GGUF)"
+    )
+    parser.add_argument(
+        "--model-family", "-f",
+        default="llama_70b",
+        choices=list(MODEL_FAMILIES.keys()),
+        help="Model family: llama_70b or lfm2_24b (default: llama_70b)"
     )
     parser.add_argument(
         "--quant", "-q",
         default="Q4_K_M",
-        choices=list(LlamaTransformer.QUANT_OPTIONS.keys()),
-        help="Quantization level (default: Q4_K_M)"
+        help="Quantization (e.g. Q4_K_M; options depend on model-family)"
     )
     parser.add_argument(
         "--ctx", "-c",
@@ -748,7 +1210,7 @@ def main():
     parser.add_argument(
         "--list-quants",
         action="store_true",
-        help="List available quantization options and exit"
+        help="List quantization options for --model-family and exit"
     )
     parser.add_argument(
         "--interactive", "-i",
@@ -765,20 +1227,21 @@ def main():
     args = parser.parse_args()
     
     if args.list_quants:
-        LlamaTransformer.list_quantizations()
+        LlamaTransformer.list_quantizations(model_family=args.model_family)
         return
     
     # Memory-efficient settings
-    print("\n🦙 Initializing Llama 3.3 70B for Mac M4...\n")
+    print(f"\n🦙 Initializing {MODEL_FAMILIES[args.model_family]['name']}...\n")
     
     transformer = LlamaTransformer(
         model_path=args.model_path,
         quantization=args.quant,
+        model_family=args.model_family,
         n_ctx=args.ctx,
         n_batch=256,
-        n_gpu_layers=args.gpu_layers,  # Use Metal GPU (-1 = all layers)
-        use_mmap=True,                 # Critical: stream from disk
-        use_mlock=False,               # Don't lock in RAM
+        n_gpu_layers=args.gpu_layers,
+        use_mmap=True,
+        use_mlock=False,
     )
     
     if args.interactive:

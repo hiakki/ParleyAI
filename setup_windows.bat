@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 
 echo.
 echo =====================================================
-echo   Llama 3.3 70B Chat - Windows Setup (NVIDIA CUDA)
+echo   ParleyAI - Windows Setup (NVIDIA CUDA)
 echo =====================================================
 echo.
 
@@ -122,26 +122,29 @@ echo   Setting up Backend...
 echo ========================================
 cd backend
 
-:: Create virtual environment
+:: Create virtual environment if missing
 if exist venv (
-    echo Removing old virtual environment...
-    rmdir /s /q venv
+    echo [OK] Virtual environment exists
+) else (
+    echo Creating virtual environment...
+    python -m venv venv
+    if %ERRORLEVEL% neq 0 (
+        echo ERROR: Failed to create virtual environment
+        pause
+        exit /b 1
+    )
 )
 
-echo Creating virtual environment...
-python -m venv venv
-if %ERRORLEVEL% neq 0 (
-    echo ERROR: Failed to create virtual environment
-    pause
-    exit /b 1
-)
-
-:: Activate venv and install dependencies
+:: Activate venv
 echo Activating virtual environment...
 call venv\Scripts\activate.bat
 
-echo Upgrading pip...
-python -m pip install --upgrade pip
+:: Check if llama-cpp-python is already installed
+python -c "import llama_cpp" >nul 2>&1
+if %ERRORLEVEL%==0 (
+    echo [OK] llama-cpp-python already installed
+    goto :install_success
+)
 
 echo.
 echo ========================================
@@ -149,9 +152,11 @@ echo Installing llama-cpp-python with CUDA...
 echo ========================================
 echo.
 
+echo Upgrading pip...
+python -m pip install --upgrade pip
+
 :: Try pre-built CUDA wheel first (no compilation needed!)
 echo Attempting to install pre-built CUDA wheel...
-echo This is the easiest method - no build tools required!
 echo.
 
 pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124
@@ -255,22 +260,28 @@ if %ERRORLEVEL% neq 0 (
 
 :install_success
 echo.
-echo [OK] llama-cpp-python installed successfully!
+echo [OK] llama-cpp-python ready
 
-echo Installing other dependencies...
-pip install -r requirements.txt
+echo Checking Python dependencies...
+pip install -q --upgrade -r requirements.txt
 
 call deactivate
 cd ..
-
+echo [OK] Backend ready
 echo.
+
 echo ========================================
 echo   Setting up Frontend...
 echo ========================================
 cd frontend
 
-echo Installing npm dependencies...
-call npm install
+if exist node_modules (
+    echo Checking for updates...
+    call npm install --prefer-offline
+) else (
+    echo Installing npm dependencies...
+    call npm install
+)
 
 if %ERRORLEVEL% neq 0 (
     echo ERROR: Failed to install frontend dependencies
@@ -279,6 +290,52 @@ if %ERRORLEVEL% neq 0 (
 )
 
 cd ..
+echo [OK] Frontend ready
+
+:: Install tunnel tools (optional, for TUNNEL=on)
+echo.
+echo ========================================
+echo   Setting up tunnel tools
+echo ========================================
+
+:: cloudflared
+where cloudflared >nul 2>&1
+if %ERRORLEVEL%==0 (
+    echo [OK] cloudflared already installed
+) else (
+    where choco >nul 2>&1
+    if !ERRORLEVEL!==0 (
+        echo Installing cloudflared via Chocolatey...
+        choco install cloudflared -y
+        if !ERRORLEVEL!==0 (
+            echo [OK] cloudflared installed
+        ) else (
+            echo [SKIP] cloudflared install failed
+        )
+    ) else (
+        where winget >nul 2>&1
+        if !ERRORLEVEL!==0 (
+            echo Installing cloudflared via winget...
+            winget install --id Cloudflare.cloudflared --accept-source-agreements --accept-package-agreements
+        ) else (
+            echo [SKIP] No package manager found for cloudflared
+        )
+    )
+)
+
+:: localtunnel
+where lt >nul 2>&1
+if %ERRORLEVEL%==0 (
+    echo [OK] localtunnel already installed
+) else (
+    echo Installing localtunnel...
+    call npm install -g localtunnel
+    if !ERRORLEVEL!==0 (
+        echo [OK] localtunnel installed
+    ) else (
+        echo [SKIP] Could not install localtunnel
+    )
+)
 
 echo.
 echo =====================================================
@@ -286,6 +343,10 @@ echo   Setup Complete!
 echo =====================================================
 echo.
 echo To start the application:
+echo   .\start_windows.bat
+echo.
+echo To expose over the internet:
+echo   set TUNNEL=on
 echo   .\start_windows.bat
 echo.
 echo To use a specific model:

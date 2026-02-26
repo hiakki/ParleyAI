@@ -1,4 +1,4 @@
-# Backend dependencies for Llama 3.3 70B Chat API
+# ParleyAI backend dependencies
 
 # LLM Engine
 llama-cpp-python>=0.2.90

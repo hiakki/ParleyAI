@@ -192,9 +192,9 @@ function App() {
         <div className="header-left">
           <span className="logo">🦙</span>
           <div className="header-title">
-            <h1>Llama 3.3 70B</h1>
+            <h1>ParleyAI</h1>
             <span className="header-subtitle">
-              {modelInfo ? `${modelInfo.current} quantization` : 'Local AI Chat'}
+              {modelInfo ? `${modelInfo.model || modelInfo.model_family || ''} · ${modelInfo.current}` : 'Local AI Chat'}
             </span>
           </div>
         </div>
@@ -224,10 +224,10 @@ function App() {
         {messages.length === 0 ? (
           <div className="welcome">
             <div className="welcome-icon">🦙</div>
-            <h2>Welcome to Llama Chat</h2>
+            <h2>Welcome to ParleyAI</h2>
             <p>
-              Chat with Meta's Llama 3.3 70B model running locally on your Mac.
-              {modelInfo && ` Using ${modelInfo.current} quantization.`}
+              Chat with large language models running locally on your machine.
+              {modelInfo && ` Currently: ${modelInfo.model || modelInfo.model_family || 'unknown'} (${modelInfo.current}).`}
             </p>
             <div className="welcome-suggestions">
               <button onClick={() => setInput('Explain quantum computing in simple terms')}>

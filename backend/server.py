@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-FastAPI Backend Server for Llama 3.3 70B Chat
+ParleyAI Backend Server
 
-Provides REST API and Server-Sent Events (SSE) for streaming chat responses.
+FastAPI backend providing REST API and Server-Sent Events (SSE) for streaming
+chat responses from local GGUF models (Llama 3.3 70B, LFM2-24B, etc.).
 """
 
 import os
@@ -10,6 +11,8 @@ import json
 import asyncio
 import logging
 import sys
+import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -20,7 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from llama_transformer import LlamaTransformer, get_transformer, PerfMetrics
+from llama_transformer import LlamaTransformer, LlamaServerTransformer, get_transformer, PerfMetrics, MODEL_FAMILIES
 
 # Setup logging
 LOG_DIR = Path(__file__).parent / "logs"
@@ -43,34 +46,35 @@ logger = logging.getLogger(__name__)
 
 
 # Configuration from environment
+MODEL_FAMILY = os.getenv("MODEL_FAMILY", "llama_70b")
 QUANT = os.getenv("QUANT", "Q4_K_M")
 MODEL_PATH_ENV = os.getenv("MODEL_PATH", None)
 CTX = int(os.getenv("CTX", "2048"))
 GPU_LAYERS = int(os.getenv("GPU_LAYERS", "-1"))
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "512"))  # Larger batch = faster prompt processing
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "512"))
 
-# Resolve MODEL_PATH - handle directory vs file
-def resolve_model_path(path_env: str | None, quant: str) -> str | None:
+# Resolve MODEL_PATH - handle directory vs file (filename depends on model_family)
+def resolve_model_path(path_env: str | None, quant: str, model_family: str) -> str | None:
     """Resolve model path from environment variable."""
     if path_env is None:
         return None
     
-    # Expand ~ to home directory
     path = os.path.expanduser(path_env)
     
-    # If it's a directory, construct the full filename
     if os.path.isdir(path):
-        filename = f"Llama-3.3-70B-Instruct-{quant}.gguf"
+        quants = MODEL_FAMILIES.get(model_family, {}).get("quants", {})
+        filename = quants.get(quant, {}).get("filename") if quant in quants else None
+        if not filename:
+            return None
         full_path = os.path.join(path, filename)
         return full_path if os.path.exists(full_path) else None
     
-    # If it's a file, return as-is
     if os.path.isfile(path):
         return path
     
     return None
 
-MODEL_PATH = resolve_model_path(MODEL_PATH_ENV, QUANT)
+MODEL_PATH = resolve_model_path(MODEL_PATH_ENV, QUANT, MODEL_FAMILY)
 
 # Global transformer instance
 transformer: Optional[LlamaTransformer] = None
@@ -81,8 +85,9 @@ async def lifespan(app: FastAPI):
     """Initialize the transformer on startup."""
     global transformer
     logger.info("=" * 60)
-    logger.info("🦙 Initializing Llama 3.3 70B Backend Server")
+    logger.info("🦙 Initializing Backend Server")
     logger.info("=" * 60)
+    logger.info(f"Model family: {MODEL_FAMILY} ({MODEL_FAMILIES.get(MODEL_FAMILY, {}).get('name', '')})")
     logger.info(f"Log file: {log_filename}")
     logger.info(f"Quantization: {QUANT}")
     logger.info(f"Context: {CTX} tokens")
@@ -96,6 +101,7 @@ async def lifespan(app: FastAPI):
         transformer = get_transformer(
             quantization=QUANT,
             model_path=MODEL_PATH,
+            model_family=MODEL_FAMILY,
             n_ctx=CTX,
             n_gpu_layers=GPU_LAYERS,
             n_batch=BATCH_SIZE,
@@ -108,11 +114,13 @@ async def lifespan(app: FastAPI):
     logger.info("✓ Server ready!")
     yield
     logger.info("👋 Shutting down...")
+    if transformer and isinstance(transformer, LlamaServerTransformer):
+        transformer.shutdown()
 
 
 app = FastAPI(
-    title="Llama 3.3 70B Chat API",
-    description="Chat API for Llama 3.3 70B running locally on Apple Silicon",
+    title="ParleyAI API",
+    description="ParleyAI — chat with local GGUF models (Llama 3.3 70B, LFM2-24B, etc.)",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -149,7 +157,8 @@ async def root():
     """Health check endpoint."""
     return {
         "status": "ok",
-        "model": "Llama-3.3-70B-Instruct",
+        "model_family": MODEL_FAMILY,
+        "model": MODEL_FAMILIES.get(MODEL_FAMILY, {}).get("name", MODEL_FAMILY),
         "quantization": QUANT,
         "context_window": CTX,
     }
@@ -157,8 +166,10 @@ async def root():
 
 @app.get("/api/models")
 async def list_models():
-    """List available quantization options."""
+    """List available quantization options for the current model family."""
+    quants = MODEL_FAMILIES.get(MODEL_FAMILY, {}).get("quants", {})
     return {
+        "model_family": MODEL_FAMILY,
         "models": [
             {
                 "id": name,
@@ -166,7 +177,7 @@ async def list_models():
                 "quality": info["quality"],
                 "recommended_ram": info["recommended_ram"],
             }
-            for name, info in LlamaTransformer.QUANT_OPTIONS.items()
+            for name, info in quants.items()
         ],
         "current": QUANT,
     }
@@ -260,8 +271,259 @@ async def generate(prompt: str, max_tokens: int = 512, temperature: float = 0.7)
     return {"response": response}
 
 
+# ---------------------------------------------------------------------------
+# OpenAI-compatible /v1 endpoints
+# Allows external tools (Claude Code CLI, curl, etc.) to use this backend
+# with any OpenAI-compatible client. Wake-up is handled automatically for
+# llama-server-backed models (LFM2, etc.).
+# ---------------------------------------------------------------------------
+
+class OpenAIChatRequest(BaseModel):
+    model: str = ""
+    messages: list[Message]
+    max_tokens: int = 512
+    temperature: float = 0.7
+    stream: bool = False
+
+
+@app.get("/v1/models")
+async def openai_list_models():
+    """OpenAI-compatible model list."""
+    family = MODEL_FAMILIES.get(MODEL_FAMILY, {})
+    return {
+        "object": "list",
+        "data": [{
+            "id": MODEL_FAMILY,
+            "object": "model",
+            "owned_by": "local",
+            "meta": {
+                "name": family.get("name", MODEL_FAMILY),
+                "quantization": QUANT,
+            },
+        }],
+    }
+
+
+@app.post("/v1/chat/completions")
+async def openai_chat_completions(request: OpenAIChatRequest):
+    """
+    OpenAI-compatible chat completions endpoint.
+
+    Works with any client that supports a custom base URL (Claude Code CLI,
+    OpenAI Python SDK, curl, etc.).  Wakes up llama-server automatically if
+    it was idle-stopped.
+    """
+    if transformer is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+
+    messages = [{"role": m.role, "content": m.content} for m in request.messages]
+    user_msg = next((m["content"][:100] for m in messages if m["role"] == "user"), "")
+    logger.info(f"[v1] Chat request: stream={request.stream}, max_tokens={request.max_tokens}")
+    logger.info(f"[v1] User message: {user_msg}{'...' if len(user_msg) >= 100 else ''}")
+
+    model_name = MODEL_FAMILIES.get(MODEL_FAMILY, {}).get("name", MODEL_FAMILY)
+    ts = int(__import__("time").time())
+
+    if request.stream:
+        return StreamingResponse(
+            openai_stream_chat(messages, request.max_tokens, request.temperature, model_name, ts),
+            media_type="text/event-stream",
+        )
+
+    # Non-streaming
+    response_text = transformer.chat(
+        messages, max_tokens=request.max_tokens, temperature=request.temperature, stream=False,
+    )
+    logger.info(f"[v1] Response: {len(response_text)} chars")
+    return {
+        "id": f"chatcmpl-{ts}",
+        "object": "chat.completion",
+        "created": ts,
+        "model": model_name,
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": response_text},
+            "finish_reason": "stop",
+        }],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+    }
+
+
+async def openai_stream_chat(
+    messages: list[dict], max_tokens: int, temperature: float,
+    model_name: str, ts: int,
+):
+    """SSE generator in OpenAI streaming format."""
+    try:
+        for token, metrics in transformer.chat_with_metrics(
+            messages, max_tokens=max_tokens, temperature=temperature,
+        ):
+            if token is not None:
+                chunk = {
+                    "id": f"chatcmpl-{ts}",
+                    "object": "chat.completion.chunk",
+                    "created": ts,
+                    "model": model_name,
+                    "choices": [{"index": 0, "delta": {"content": token}, "finish_reason": None}],
+                }
+                yield f"data: {json.dumps(chunk)}\n\n"
+                await asyncio.sleep(0)
+            elif metrics is not None:
+                logger.info(f"[v1] Done: {metrics.completion_tokens} tok, {metrics.tokens_per_second:.1f} tok/s")
+                final = {
+                    "id": f"chatcmpl-{ts}",
+                    "object": "chat.completion.chunk",
+                    "created": ts,
+                    "model": model_name,
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                }
+                yield f"data: {json.dumps(final)}\n\n"
+        yield "data: [DONE]\n\n"
+    except Exception as e:
+        logger.error(f"[v1] Stream error: {e}", exc_info=True)
+        err = {"error": {"message": str(e), "type": "server_error"}}
+        yield f"data: {json.dumps(err)}\n\n"
+        yield "data: [DONE]\n\n"
+
+
+# ---------------------------------------------------------------------------
+# Anthropic Messages-compatible /v1/messages endpoint
+# Lets Claude Code CLI talk to ParleyAI directly — no proxy needed.
+# Set ANTHROPIC_BASE_URL=http://localhost:8000 to use.
+# ---------------------------------------------------------------------------
+
+class AnthropicMessage(BaseModel):
+    role: str
+    content: str | list
+
+class AnthropicMessagesRequest(BaseModel):
+    model: str = ""
+    messages: list[AnthropicMessage]
+    max_tokens: int = 512
+    temperature: float = 0.7
+    stream: bool = False
+    system: str | list | None = None
+    # Accept and ignore fields Claude Code may send
+    model_config = {"extra": "allow"}
+
+
+def _extract_anthropic_messages(request: AnthropicMessagesRequest) -> list[dict]:
+    """Convert Anthropic-format messages to simple role/content dicts."""
+    msgs = []
+    if request.system:
+        system_text = request.system
+        if isinstance(system_text, list):
+            system_text = "\n".join(
+                b["text"] for b in system_text if isinstance(b, dict) and b.get("type") == "text"
+            )
+        msgs.append({"role": "system", "content": system_text})
+    for m in request.messages:
+        content = m.content
+        if isinstance(content, list):
+            content = "\n".join(
+                b["text"] for b in content if isinstance(b, dict) and b.get("type") == "text"
+            )
+        msgs.append({"role": m.role, "content": content})
+    return msgs
+
+
+@app.post("/v1/messages")
+async def anthropic_messages(request: AnthropicMessagesRequest):
+    """
+    Anthropic Messages API compatible endpoint.
+
+    Claude Code CLI sets ANTHROPIC_BASE_URL and sends requests here.
+    Wakes up llama-server automatically if it was idle-stopped.
+    """
+    if transformer is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+
+    messages = _extract_anthropic_messages(request)
+    user_msg = next((m["content"][:100] for m in messages if m["role"] == "user"), "")
+    logger.info(f"[messages] Chat request: stream={request.stream}, max_tokens={request.max_tokens}")
+    logger.info(f"[messages] User message: {user_msg}{'...' if len(user_msg) >= 100 else ''}")
+
+    model_name = MODEL_FAMILIES.get(MODEL_FAMILY, {}).get("name", MODEL_FAMILY)
+    msg_id = f"msg_{uuid.uuid4().hex[:24]}"
+
+    if request.stream:
+        return StreamingResponse(
+            anthropic_stream_chat(messages, request.max_tokens, request.temperature, model_name, msg_id),
+            media_type="text/event-stream",
+        )
+
+    response_text = transformer.chat(
+        messages, max_tokens=request.max_tokens, temperature=request.temperature, stream=False,
+    )
+    logger.info(f"[messages] Response: {len(response_text)} chars")
+    return {
+        "id": msg_id,
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "text", "text": response_text}],
+        "model": model_name,
+        "stop_reason": "end_turn",
+        "stop_sequence": None,
+        "usage": {"input_tokens": 0, "output_tokens": 0},
+    }
+
+
+async def anthropic_stream_chat(
+    messages: list[dict], max_tokens: int, temperature: float,
+    model_name: str, msg_id: str,
+):
+    """SSE generator in Anthropic streaming format."""
+    def sse(event: str, data: dict) -> str:
+        return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+    yield sse("message_start", {
+        "type": "message_start",
+        "message": {
+            "id": msg_id, "type": "message", "role": "assistant",
+            "content": [], "model": model_name,
+            "stop_reason": None, "stop_sequence": None,
+            "usage": {"input_tokens": 0, "output_tokens": 0},
+        },
+    })
+    yield sse("content_block_start", {
+        "type": "content_block_start", "index": 0,
+        "content_block": {"type": "text", "text": ""},
+    })
+    yield sse("ping", {"type": "ping"})
+
+    output_tokens = 0
+    try:
+        for token, metrics in transformer.chat_with_metrics(
+            messages, max_tokens=max_tokens, temperature=temperature,
+        ):
+            if token is not None:
+                output_tokens += 1
+                yield sse("content_block_delta", {
+                    "type": "content_block_delta", "index": 0,
+                    "delta": {"type": "text_delta", "text": token},
+                })
+                await asyncio.sleep(0)
+            elif metrics is not None:
+                output_tokens = getattr(metrics, "completion_tokens", output_tokens)
+                logger.info(f"[messages] Done: {output_tokens} tok, {metrics.tokens_per_second:.1f} tok/s")
+
+        yield sse("content_block_stop", {"type": "content_block_stop", "index": 0})
+        yield sse("message_delta", {
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+            "usage": {"output_tokens": output_tokens},
+        })
+        yield sse("message_stop", {"type": "message_stop"})
+    except Exception as e:
+        logger.error(f"[messages] Stream error: {e}", exc_info=True)
+        yield sse("error", {
+            "type": "error",
+            "error": {"type": "server_error", "message": str(e)},
+        })
+
+
 if __name__ == "__main__":
     import uvicorn
     
     port = int(os.getenv("PORT", "8000"))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="127.0.0.1", port=port)

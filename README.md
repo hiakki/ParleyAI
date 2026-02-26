@@ -1,8 +1,12 @@
-# Llama 3.3 70B Chat
+# ParleyAI
 
-A full-stack chat application running **bartowski's GGUF quantized versions** of Llama 3.3 70B Instruct locally.
+A full-stack chat application for running large GGUF models locally.
 
-**Supported Platforms:**
+**Supported models:**
+- **Llama 3.3 70B Instruct** ([bartowski GGUF](https://huggingface.co/bartowski/Llama-3.3-70B-Instruct-GGUF)) — 48GB+ RAM recommended
+- **LFM2-24B-A2B** ([Liquid AI](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF)) — fits in **30–35GB RAM**, ChatML format
+
+**Supported platforms:**
 - ✅ **macOS** with Apple Silicon (M1/M2/M3/M4) - Metal GPU acceleration
 - ✅ **Windows** with NVIDIA GPUs (RTX 3060, 3070, 3080, 4060, 4070, 4080, 4090, 5060, etc.) - CUDA acceleration
 - ✅ **Linux** with NVIDIA GPUs - CUDA acceleration
@@ -94,7 +98,7 @@ The setup script will:
 
 ```powershell
 # Open "x64 Native Tools Command Prompt for VS 2022" from Start Menu
-cd path\to\local_ai_chat_app
+cd path\to\ParleyAI
 
 # 1. Backend setup
 cd backend
@@ -188,15 +192,62 @@ MODEL_PATH=~/llama-models QUANT=IQ3_M CTX=2048 GPU_LAYERS=40 ./start.sh
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
-| `MODEL_PATH` | `~/llama-models` | Directory containing GGUF models |
-| `QUANT` | `IQ3_M` | 32GB model, medium quality I-quant |
-| `CTX` | `1080` | Context window (tokens) |
-| `GPU_LAYERS` | `40` | Layers offloaded to Metal GPU |
+| `MODEL_FAMILY` | `llama_70b` or `lfm2_24b` | Model family (LFM2 fits in 30–35GB RAM) |
+| `MODEL_PATH` | `~/llama-models` | Directory or path to GGUF file |
+| `QUANT` | `Q4_K_M` | Quantization (options depend on `MODEL_FAMILY`) |
+| `CTX` | `2048` | Context window (tokens) |
+| `GPU_LAYERS` | `99` or `-1` | Layers offloaded to GPU |
+| `TUNNEL` | `off` | Set to `on` to expose via internet tunnel |
+| `TUNNEL_TOOL` | `auto` | `auto`, `cloudflared`, or `localtunnel` |
+
+### Accessing from other devices
+
+The frontend binds to `0.0.0.0` so it's accessible on your LAN. The backend stays on `127.0.0.1` (localhost only) for security — the frontend proxies API requests to it.
+
+```
+http://<your-ip>:5173   # Frontend (LAN accessible)
+http://localhost:8000    # Backend API (localhost only)
+```
+
+The startup output shows your local IP.
+
+**Internet access** — add `TUNNEL=on` to expose the frontend via a public URL:
+
+```bash
+TUNNEL=on ./start.sh
+```
+
+Requires one of:
+- `cloudflared` (recommended) — `brew install cloudflared`
+- `localtunnel` — `npm install -g localtunnel`
+
+The tunnel URL is printed at startup and logged to `.tunnel.log`.
+
+### Running LFM2-24B (30–35GB RAM)
+
+[LFM2-24B-A2B](https://huggingface.co/LiquidAI/LFM2-24B-A2B) is a 24B MoE model with 2B active parameters per token, fitting in ~32GB RAM. Use it when you have 30–35GB RAM (e.g. 32GB Mac or PC) and don’t want to run the 70B model.
+
+**Prerequisite:** LFM2 requires `llama-server` on your PATH (the `lfm2moe` architecture isn’t in the PyPI `llama-cpp-python` yet, so the app runs LFM2 via `llama-server`’s OpenAI-compatible API as a subprocess):
+
+```bash
+# macOS
+brew install llama.cpp
+
+# Linux / Windows: download from https://github.com/ggml-org/llama.cpp/releases
+```
+
+Then start:
+
+```bash
+MODEL_FAMILY=lfm2_24b QUANT=Q4_K_M ./start.sh
+```
+
+Optional: set `MODEL_PATH` to a directory containing the LFM2 GGUF file (e.g. `LFM2-24B-A2B-Q4_K_M.gguf`). Otherwise the app downloads from [LiquidAI/LFM2-24B-A2B-GGUF](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF).
 
 ## 📁 Project Structure
 
 ```
-local_ai_chat_app/
+ParleyAI/
 ├── frontend/              # React chat UI
 │   ├── src/
 │   │   ├── App.jsx       # Main chat component
@@ -229,7 +280,7 @@ Running a 70B parameter model (normally ~140GB in FP16) efficiently requires:
 
 ### All Available Quantizations
 
-Full list from [bartowski/Llama-3.3-70B-Instruct-GGUF](https://huggingface.co/bartowski/Llama-3.3-70B-Instruct-GGUF):
+**Llama 3.3 70B** — full list from [bartowski/Llama-3.3-70B-Instruct-GGUF](https://huggingface.co/bartowski/Llama-3.3-70B-Instruct-GGUF):
 
 | Quantization | Size | RAM | Quality | Notes |
 |--------------|------|-----|---------|-------|
@@ -274,6 +325,8 @@ Full list from [bartowski/Llama-3.3-70B-Instruct-GGUF](https://huggingface.co/ba
 
 > **💡 Tip**: For Apple Silicon Macs, use K-quants (Q4_K_M, Q5_K_M, etc.) for best performance. I-quants (IQ3_M, IQ4_XS) offer better quality at the same size but may be slower on Metal.
 
+**LFM2-24B** (`MODEL_FAMILY=lfm2_24b`) — from [LiquidAI/LFM2-24B-A2B-GGUF](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF): Q4_0, Q4_K_M, Q5_K_M, Q6_K, Q8_0, BF16, F16. Recommended for 30–35GB RAM: **Q4_K_M** or **Q5_K_M**.
+
 ### 🎮 NVIDIA GPU Recommendations
 
 For Windows/Linux with NVIDIA GPUs, the model is split between **VRAM** (fast) and **System RAM** (slower). More layers on GPU = faster inference.
@@ -302,6 +355,7 @@ For Windows/Linux with NVIDIA GPUs, the model is split between **VRAM** (fast) a
 
 ```powershell
 # RTX 4060 (8GB VRAM) - Windows
+$env:MODEL_FAMILY="llama_70b"   # or "lfm2_24b" for 30–35GB RAM
 $env:MODEL_PATH="C:\llama-models"
 $env:QUANT="IQ2_XXS"
 $env:CTX="1024"
@@ -558,6 +612,132 @@ huggingface-cli download bartowski/Llama-3.3-70B-Instruct-GGUF \
 cd backend
 python llama_transformer.py -m ~/.cache/huggingface/hub/.../Llama-3.3-70B-Instruct-Q3_K_S.gguf
 ```
+
+### LFM2: "llama-server not found" or "Failed to load model"
+
+LFM2 models use the `lfm2moe` architecture which isn't in the PyPI `llama-cpp-python` package yet. The app runs LFM2 via an external **`llama-server`** subprocess (from the llama.cpp project).
+
+**Fix:** Install `llama-server` (part of llama.cpp):
+
+```bash
+# macOS
+brew install llama.cpp
+
+# Linux / Windows: download from https://github.com/ggml-org/llama.cpp/releases
+```
+
+Then start again with `MODEL_FAMILY=lfm2_24b`.
+
+Also confirm the GGUF file is complete (e.g. **LFM2-24B-A2B-Q8_0.gguf** is ~25 GB). If it's truncated, delete and re-download, or omit `MODEL_PATH` so the app downloads from Hugging Face.
+
+
+## 🔌 External API (Claude Code CLI, OpenClaw, curl, OpenAI SDK)
+
+ParleyAI exposes both **Anthropic Messages API** (`/v1/messages`) and **OpenAI-compatible** (`/v1/chat/completions`) endpoints on the same backend port (default `http://localhost:8000`). Wake-up is automatic — if `llama-server` was idle-stopped, the first request starts it.
+
+### Endpoints
+
+| Endpoint | Method | Format | Used by |
+|----------|--------|--------|---------|
+| `/v1/messages` | POST | Anthropic | Claude Code CLI, OpenClaw, Anthropic SDK |
+| `/v1/chat/completions` | POST | OpenAI | curl, OpenAI SDK, OpenClaw, other tools |
+| `/v1/models` | GET | OpenAI | List available model(s) |
+
+### Claude Code CLI
+
+`start.sh` writes a `.claude_env` file automatically. In another terminal:
+
+```bash
+source /absolute/path/to/.claude_env && claude
+```
+
+The exact command (with absolute path) is printed at startup. The `.claude_env` file is cleaned up on shutdown.
+
+Manually (without `start.sh`):
+
+```bash
+export ANTHROPIC_BASE_URL=http://localhost:8000
+export ANTHROPIC_AUTH_TOKEN=not-needed
+export ANTHROPIC_MODEL=parleyai
+claude
+```
+
+No proxy, no extra process — Claude Code talks directly to the ParleyAI backend.
+
+### OpenClaw
+
+Add a custom provider in your OpenClaw config (`~/.openclaw/agents/<agent>/openclaw.json`):
+
+```json5
+{
+  agents: {
+    defaults: {
+      model: { primary: "parleyai/local" },
+    },
+  },
+  models: {
+    providers: {
+      parleyai: {
+        baseUrl: "http://localhost:8000",
+        apiKey: "not-needed",
+        api: "anthropic-messages",
+        models: [
+          {
+            id: "local",
+            name: "ParleyAI Local",
+            reasoning: false,
+            input: ["text"],
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 2048,
+            maxTokens: 512,
+          },
+        ],
+      },
+    },
+  },
+}
+```
+
+Then:
+
+```bash
+openclaw models set parleyai/local
+```
+
+Adjust `contextWindow` to match your `CTX` env var (default 2048). To use the OpenAI format instead, change `api` to `"openai-completions"`.
+
+### Claude Desktop
+
+Claude Desktop **cannot** connect to a local LLM. It always uses Anthropic's cloud models. MCP in Claude Desktop adds tools/data sources to Claude, not a different model.
+
+### Quick test with curl
+
+```bash
+# Anthropic format
+curl http://localhost:8000/v1/messages \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"Hello!"}],"max_tokens":64}'
+
+# OpenAI format
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"Hello!"}],"max_tokens":64}'
+```
+
+### Python (OpenAI SDK)
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
+response = client.chat.completions.create(
+    model="parleyai",
+    messages=[{"role": "user", "content": "What is 2+2?"}],
+)
+print(response.choices[0].message.content)
+```
+
+---
 
 ## 📝 Credits & License
 

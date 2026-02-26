@@ -21,6 +21,11 @@ dist/
 # Models (too large for git)
 *.gguf
 
+# Generated at runtime by start.sh
+.claude_env
+.claude_env.bat
+.tunnel.log
+
 # Logs
 *.log
 backend/logs/

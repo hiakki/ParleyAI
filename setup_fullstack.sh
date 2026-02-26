@@ -1,12 +1,13 @@
 #!/bin/bash
-# setup_fullstack.sh - Set up the full-stack Llama Chat application
+# setup_fullstack.sh - Set up ParleyAI (full-stack local chat application)
+# Safe to re-run — only installs what's new or upgraded.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-echo "🦙 Setting up Llama 3.3 70B Chat Application"
+echo "🦙 Setting up ParleyAI"
 echo "============================================="
 echo ""
 
@@ -17,17 +18,25 @@ cd backend
 if [ ! -d "venv" ]; then
     echo "   Creating virtual environment..."
     python3 -m venv venv
+else
+    echo "   ✓ Virtual environment exists"
 fi
 
 source venv/bin/activate
 
-echo "   Installing dependencies..."
-CMAKE_ARGS="-DLLAMA_METAL=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
-pip install -r requirements.txt
+if python -c "import llama_cpp" 2>/dev/null; then
+    echo "   ✓ llama-cpp-python already installed"
+else
+    echo "   Installing llama-cpp-python with Metal..."
+    CMAKE_ARGS="-DLLAMA_METAL=on" pip install llama-cpp-python --no-cache-dir
+fi
+
+echo "   Checking Python dependencies..."
+pip install -q --upgrade -r requirements.txt
 
 deactivate
 cd ..
-echo "   ✓ Backend setup complete"
+echo "   ✓ Backend ready"
 echo ""
 
 # Setup Frontend
@@ -40,11 +49,75 @@ if ! command -v node &> /dev/null; then
     exit 1
 fi
 
-echo "   Installing dependencies..."
-npm install
+if [ -d "node_modules" ]; then
+    echo "   Checking for updates..."
+    npm install --prefer-offline
+else
+    echo "   Installing dependencies..."
+    npm install
+fi
 
 cd ..
-echo "   ✓ Frontend setup complete"
+echo "   ✓ Frontend ready"
+echo ""
+
+# Tunnel tools (optional, for TUNNEL=on)
+echo "📦 Checking tunnel tools..."
+
+# cloudflared
+if command -v cloudflared &>/dev/null; then
+    echo "   ✓ cloudflared already installed"
+else
+    CF_INSTALLED=false
+
+    if command -v brew &>/dev/null; then
+        echo "   Installing cloudflared via Homebrew..."
+        if brew install cloudflared 2>/dev/null; then
+            CF_INSTALLED=true
+        else
+            echo "   ⚠️  Homebrew install failed, trying direct download..."
+        fi
+    fi
+
+    if [ "$CF_INSTALLED" = false ]; then
+        ARCH=$(uname -m)
+        if [ "$ARCH" = "arm64" ]; then
+            CF_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-arm64.tgz"
+        else
+            CF_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64.tgz"
+        fi
+        echo "   Downloading cloudflared binary..."
+        if curl -fsSL "$CF_URL" -o /tmp/cloudflared.tgz 2>/dev/null; then
+            tar -xzf /tmp/cloudflared.tgz -C /tmp 2>/dev/null
+            if [ -f /tmp/cloudflared ]; then
+                mkdir -p "$HOME/bin"
+                mv /tmp/cloudflared "$HOME/bin/cloudflared"
+                chmod +x "$HOME/bin/cloudflared"
+                export PATH="$HOME/bin:$PATH"
+                CF_INSTALLED=true
+            fi
+            rm -f /tmp/cloudflared.tgz
+        fi
+    fi
+
+    if [ "$CF_INSTALLED" = true ]; then
+        echo "   ✓ cloudflared installed"
+    else
+        echo "   ⚠️  Could not install cloudflared (not critical)"
+    fi
+fi
+
+# localtunnel
+if command -v lt &>/dev/null; then
+    echo "   ✓ localtunnel already installed"
+else
+    echo "   Installing localtunnel..."
+    if npm install -g localtunnel 2>/dev/null; then
+        echo "   ✓ localtunnel installed"
+    else
+        echo "   ⚠️  Could not install localtunnel (not critical)"
+    fi
+fi
 echo ""
 
 echo "============================================="
@@ -52,6 +125,9 @@ echo "✅ Setup complete!"
 echo ""
 echo "To start the application:"
 echo "   ./start.sh"
+echo ""
+echo "To expose over the internet:"
+echo "   TUNNEL=on ./start.sh"
 echo ""
 echo "Or start individually:"
 echo "   Backend:  cd backend && ./run_server.sh"
