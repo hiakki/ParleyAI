@@ -510,7 +510,7 @@ if exist "llama-cpp\llama-server.exe" (
       "$ErrorActionPreference='Stop';" ^
       "$api='https://api.github.com/repos/ggml-org/llama.cpp/releases/latest';" ^
       "$rel=Invoke-RestMethod -Uri $api -Headers @{ 'User-Agent'='ParleyAI-Setup' };" ^
-      "$gpuName=''; try { $gpu=(Get-CimInstance Win32_VideoController | Select-Object -First 1 -ExpandProperty Name); if ($gpu) { $gpuName=$gpu.ToLowerInvariant() } } catch {};" ^
+      "$gpuName=''; try { $gpus=(Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name); if ($gpus) { $pick=$gpus | Where-Object { $_ -match 'NVIDIA|GeForce|RTX|Quadro' } | Select-Object -First 1; if (-not $pick) { $pick=$gpus | Select-Object -First 1 }; if ($pick) { $gpuName=$pick.ToLowerInvariant() } } } catch {};" ^
       "$isNvidia = $gpuName -match 'nvidia|geforce|rtx|quadro';" ^
       "$isAmd = $gpuName -match 'amd|radeon';" ^
       "$isIntel = $gpuName -match 'intel';" ^
