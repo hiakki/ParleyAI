@@ -542,6 +542,17 @@ if exist "llama-cpp\llama-server.exe" (
       "$archivePath=Join-Path '%CD%' $asset.name;" ^
       "$extractTmp=Join-Path $env:TEMP 'llama_cpp_win_extract';" ^
       "$targetDir=Join-Path '%CD%' 'llama-cpp';" ^
+      "$cpuArchName = switch ($cpuArch) { 9 {'x64'} 12 {'arm64'} default {$cpuArch} };" ^
+      "$cudaShown='not-detected'; if ($cudaMajor -ne '') { $cudaShown=$cudaMajor };" ^
+      "Write-Host ('All GPUs: ' + (($allGpus -join ' | ')));" ^
+      "Write-Host ('Selected GPU: ' + $gpuName);" ^
+      "Write-Host ('CPU arch: ' + $cpuArchName);" ^
+      "Write-Host ('isNvidia=' + $isNvidia + ', isAmd=' + $isAmd + ', isIntel=' + $isIntel);" ^
+      "Write-Host ('CUDA major: ' + $cudaShown);" ^
+      "Write-Host ('Preferred candidates: ' + ($preferred -join ', '));" ^
+      "Write-Host ('Selected asset: ' + $asset.name);" ^
+      "Write-Host ('Archive path: ' + $archivePath);" ^
+      "Write-Host ('Install dir: ' + $targetDir);" ^
       "if (Test-Path $archivePath) { Remove-Item $archivePath -Force };" ^
       "if (Test-Path $extractTmp) { Remove-Item $extractTmp -Recurse -Force };" ^
       "if (Test-Path $targetDir) { Remove-Item $targetDir -Recurse -Force };" ^
@@ -566,15 +577,7 @@ if exist "llama-cpp\llama-server.exe" (
       "Get-ChildItem -Path $searchRoot -Recurse -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'bin|lib|cuda|vulkan' } | ForEach-Object { $candidateLibDirs += $_.FullName };" ^
       "$candidateLibDirs = $candidateLibDirs | Select-Object -Unique;" ^
       "foreach ($d in $candidateLibDirs) { Get-ChildItem -Path $d -File -Filter '*.dll' -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName -Destination (Join-Path $targetDir $_.Name) -Force } };" ^
-      "$cpuArchName = switch ($cpuArch) { 9 {'x64'} 12 {'arm64'} default {$cpuArch} };" ^
       "Write-Host ('Downloaded asset: ' + $asset.name);" ^
-      "Write-Host ('All GPUs: ' + (($allGpus -join ' | ')));" ^
-      "Write-Host ('Selected GPU: ' + $gpuName);" ^
-      "Write-Host ('CPU arch: ' + $cpuArchName);" ^
-      "Write-Host ('isNvidia=' + $isNvidia + ', isAmd=' + $isAmd + ', isIntel=' + $isIntel);" ^
-      "$cudaShown='not-detected'; if ($cudaMajor -ne '') { $cudaShown=$cudaMajor };" ^
-      "Write-Host ('CUDA major: ' + $cudaShown);" ^
-      "Write-Host ('Preferred candidates: ' + ($preferred -join ', '));" ^
       "Write-Host ('Saved archive: ' + $archivePath);" ^
       "Write-Host ('Installed in: ' + $targetDir);"
     if !ERRORLEVEL!==0 (
