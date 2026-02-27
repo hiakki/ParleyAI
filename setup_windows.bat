@@ -1,5 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
+set "SCRIPT_DIR=%~dp0"
+cd /d "%SCRIPT_DIR%"
 
 echo.
 echo =====================================================
@@ -129,24 +131,32 @@ if !ERRORLEVEL! neq 0 (
 where cl >nul 2>&1
 if !ERRORLEVEL! neq 0 (
     echo [X] Visual Studio Build Tools - NOT FOUND or not in PATH
-    if !HAS_WINGET!==1 (
-        echo     Installing VS Build Tools with C++ workload via winget...
-        echo     ^(This is a large download and may take 10-20 minutes^)
-        winget install -e --id Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --wait" --accept-source-agreements --accept-package-agreements
-        if !ERRORLEVEL!==0 (
-            echo     [OK] VS Build Tools installed
-            set NEED_PATH_REFRESH=1
-            set NEED_RESTART=1
+    call :try_load_vs_env
+    where cl >nul 2>&1
+    if !ERRORLEVEL!==0 (
+        echo [OK] Visual Studio Build Tools ^(cl.exe loaded via VS environment^)
+    ) else (
+        if !HAS_WINGET!==1 (
+            echo     Installing VS Build Tools with C++ workload via winget...
+            echo     ^(This is a large download and may take 10-20 minutes^)
+            winget install -e --id Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --wait" --accept-source-agreements --accept-package-agreements >nul 2>&1
+            call :try_load_vs_env
+            where cl >nul 2>&1
+            if !ERRORLEVEL!==0 (
+                echo     [OK] VS Build Tools ready
+                set NEED_PATH_REFRESH=1
+                set NEED_RESTART=1
+            ) else (
+                echo     [!] VS Build Tools still unavailable in this shell
+                echo     Open "x64 Native Tools Command Prompt for VS 2022"
+                echo     and run setup_windows.bat again.
+                set MISSING_VS=1
+            )
         ) else (
-            echo     [!] winget install failed
             echo     Install "Desktop development with C++" from:
             echo     https://visualstudio.microsoft.com/visual-cpp-build-tools/
             set MISSING_VS=1
         )
-    ) else (
-        echo     Install "Desktop development with C++" from:
-        echo     https://visualstudio.microsoft.com/visual-cpp-build-tools/
-        set MISSING_VS=1
     )
 ) else (
     echo [OK] Visual Studio Build Tools ^(cl.exe found^)
@@ -504,3 +514,18 @@ echo See README.md for GPU-specific recommendations.
 echo.
 
 pause
+exit /b 0
+
+:try_load_vs_env
+set "VSDEV="
+if exist "%ProgramFiles(x86)%\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" set "VSDEV=%ProgramFiles(x86)%\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat"
+if not defined VSDEV if exist "%ProgramFiles%\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" set "VSDEV=%ProgramFiles%\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat"
+if not defined VSDEV if exist "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" (
+    for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2^>nul`) do (
+        if exist "%%i\Common7\Tools\VsDevCmd.bat" set "VSDEV=%%i\Common7\Tools\VsDevCmd.bat"
+    )
+)
+if defined VSDEV (
+    call "%VSDEV%" -no_logo -arch=x64 -host_arch=x64 >nul 2>&1
+)
+exit /b 0
