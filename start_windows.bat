@@ -76,6 +76,7 @@ if "%GPU_LAYERS%"=="" set GPU_LAYERS=-1
 if "%BATCH_SIZE%"=="" set BATCH_SIZE=512
 if "%TUNNEL%"=="" set TUNNEL=off
 if "%TUNNEL_TOOL%"=="" set TUNNEL_TOOL=auto
+if "%LLAMA_SERVER_PATH%"=="" if exist "llama-cpp\llama-server.exe" set "LLAMA_SERVER_PATH=%CD%\llama-cpp\llama-server.exe"
 if "%LLAMA_SERVER_PATH%"=="" if exist "llama-server.exe" set "LLAMA_SERVER_PATH=%CD%\llama-server.exe"
 if "%LLAMA_SERVER_PATH%"=="" if exist "backend\bin\llama-server.exe" set "LLAMA_SERVER_PATH=%CD%\backend\bin\llama-server.exe"
 
@@ -96,7 +97,7 @@ if /i "%MODEL_FAMILY%"=="lfm2_24b" (
         if not defined LLAMA_SERVER_PATH (
             echo [WARN] llama-server not found on PATH.
             echo       For LFM2 on Windows, place llama-server.exe at:
-            echo         .\llama-server.exe
+            echo         .\llama-cpp\llama-server.exe
             echo       OR set:
             echo         set LLAMA_SERVER_PATH=C:\path\to\llama-server.exe
             echo.

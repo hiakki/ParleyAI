@@ -916,6 +916,8 @@ class LlamaServerTransformer:
 
         # Common local fallback locations (helps Windows users avoid global PATH edits).
         candidates = [
+            Path(__file__).resolve().parent.parent / "llama-cpp" / "llama-server.exe",
+            Path(__file__).resolve().parent.parent / "llama-cpp" / "llama-server",
             Path(__file__).resolve().parent.parent / "llama-server.exe",
             Path(__file__).resolve().parent.parent / "llama-server",
             Path(__file__).resolve().parent / "bin" / "llama-server.exe",

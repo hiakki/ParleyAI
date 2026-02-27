@@ -501,47 +501,69 @@ echo.
 echo ========================================
 echo   Setting up llama-server (LFM2)
 echo ========================================
-if exist "llama-server.exe" (
-    echo [OK] llama-server.exe already present: %CD%\llama-server.exe
+if not exist "llama-cpp" mkdir "llama-cpp"
+if exist "llama-cpp\llama-server.exe" (
+    echo [OK] llama-server already present: %CD%\llama-cpp\llama-server.exe
 ) else (
-    echo Downloading llama-server for Windows...
+    echo Detecting best llama.cpp Windows bundle...
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
       "$ErrorActionPreference='Stop';" ^
       "$api='https://api.github.com/repos/ggml-org/llama.cpp/releases/latest';" ^
       "$rel=Invoke-RestMethod -Uri $api -Headers @{ 'User-Agent'='ParleyAI-Setup' };" ^
+      "$gpuName=''; try { $gpu=(Get-CimInstance Win32_VideoController | Select-Object -First 1 -ExpandProperty Name); if ($gpu) { $gpuName=$gpu.ToLowerInvariant() } } catch {};" ^
+      "$isNvidia = $gpuName -match 'nvidia|geforce|rtx|quadro';" ^
+      "$isAmd = $gpuName -match 'amd|radeon';" ^
+      "$isIntel = $gpuName -match 'intel';" ^
+      "$cpuArch = (Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Architecture);" ^
+      "$isX64 = $cpuArch -eq 9;" ^
       "$cudaMajor='';" ^
       "try { $nvcc=(nvcc --version 2>$null | Out-String); if ($nvcc -match 'release\s+([0-9]+)\.([0-9]+)') { $cudaMajor=$Matches[1] } } catch {};" ^
       "$preferred=@();" ^
-      "if ($cudaMajor -eq '13') { $preferred += 'cudart-llama-bin-win-cuda-13.1-x64.zip' };" ^
-      "$preferred += 'cudart-llama-bin-win-cuda-12.4-x64.zip';" ^
-      "if ($cudaMajor -eq '12') { $preferred = @('cudart-llama-bin-win-cuda-12.4-x64.zip','cudart-llama-bin-win-cuda-13.1-x64.zip') };" ^
+      "if (-not $isX64) { throw 'Unsupported CPU architecture for this script: expected x64 Windows' };" ^
+      "if ($isNvidia) {" ^
+      "  if ($cudaMajor -eq '13') { $preferred = @('cudart-llama-bin-win-cuda-13.1-x64.zip','cudart-llama-bin-win-cuda-12.4-x64.zip') }" ^
+      "  elseif ($cudaMajor -eq '12') { $preferred = @('cudart-llama-bin-win-cuda-12.4-x64.zip','cudart-llama-bin-win-cuda-13.1-x64.zip') }" ^
+      "  else { $preferred = @('cudart-llama-bin-win-cuda-12.4-x64.zip','cudart-llama-bin-win-cuda-13.1-x64.zip','llama-b*-bin-win-vulkan-x64.zip','llama-b*-bin-win-cpu-x64.zip') }" ^
+      "} elseif ($isAmd -or $isIntel) {" ^
+      "  $preferred = @('llama-b*-bin-win-vulkan-x64.zip','llama-b*-bin-win-cpu-x64.zip')" ^
+      "} else {" ^
+      "  $preferred = @('llama-b*-bin-win-cpu-x64.zip','llama-b*-bin-win-vulkan-x64.zip')" ^
+      "}" ^
       "$asset=$null;" ^
-      "foreach ($name in $preferred) { $asset = $rel.assets | Where-Object { $_.name -eq $name } | Select-Object -First 1; if ($asset) { break } };" ^
+      "foreach ($name in $preferred) {" ^
+      "  if ($name.Contains('*')) { $asset = $rel.assets | Where-Object { $_.name -like $name } | Select-Object -First 1 }" ^
+      "  else { $asset = $rel.assets | Where-Object { $_.name -eq $name } | Select-Object -First 1 }" ^
+      "  if ($asset) { break }" ^
+      "};" ^
       "if (-not $asset) { $asset=$rel.assets | Where-Object { $_.name -match '^cudart-llama-bin-win-cuda-.*-x64\.zip$' } | Select-Object -First 1 };" ^
-      "if (-not $asset) { $asset=$rel.assets | Where-Object { $_.name -match 'win.*\.zip$' } | Select-Object -First 1 };" ^
+      "if (-not $asset) { $asset=$rel.assets | Where-Object { $_.name -match 'win.*(cpu|vulkan|cuda).*x64\.zip$' } | Select-Object -First 1 };" ^
       "if (-not $asset) { throw 'No Windows release asset found for llama.cpp' };" ^
       "$zip=Join-Path $env:TEMP 'llama_cpp_win.zip';" ^
       "$dir=Join-Path $env:TEMP 'llama_cpp_win_extract';" ^
+      "$targetDir=Join-Path '%CD%' 'llama-cpp';" ^
       "if (Test-Path $zip) { Remove-Item $zip -Force };" ^
       "if (Test-Path $dir) { Remove-Item $dir -Recurse -Force };" ^
+      "if (Test-Path $targetDir) { Remove-Item $targetDir -Recurse -Force };" ^
+      "New-Item -ItemType Directory -Path $targetDir -Force | Out-Null;" ^
       "Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip -UseBasicParsing;" ^
       "Expand-Archive -Path $zip -DestinationPath $dir -Force;" ^
       "$exe=Get-ChildItem -Path $dir -Recurse -Filter 'llama-server.exe' | Select-Object -First 1;" ^
       "if (-not $exe) { throw 'llama-server.exe not found in downloaded archive' };" ^
-      "$targetDir='%CD%';" ^
-      "Copy-Item $exe.FullName -Destination (Join-Path $targetDir 'llama-server.exe') -Force;" ^
       "$exeDir=Split-Path -Parent $exe.FullName;" ^
-      "Get-ChildItem -Path $exeDir -Filter '*.dll' -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName -Destination (Join-Path $targetDir $_.Name) -Force };" ^
+      "Get-ChildItem -Path $exeDir -File | ForEach-Object { Copy-Item $_.FullName -Destination (Join-Path $targetDir $_.Name) -Force };" ^
       "Write-Host ('Downloaded asset: ' + $asset.name);" ^
-      "Write-Host ('Installed: ' + (Join-Path $targetDir 'llama-server.exe'));"
+      "Write-Host ('GPU detected: ' + $gpuName);" ^
+      "$cudaShown='not-detected'; if ($cudaMajor -ne '') { $cudaShown=$cudaMajor };" ^
+      "Write-Host ('CUDA major: ' + $cudaShown);" ^
+      "Write-Host ('Installed in: ' + $targetDir);"
     if !ERRORLEVEL!==0 (
-        echo [OK] llama-server.exe downloaded to: %CD%\llama-server.exe
-        echo     Any required DLLs from the archive were copied next to it.
+        echo [OK] llama-server downloaded to: %CD%\llama-cpp\
+        echo     Includes llama-server.exe and required runtime files.
     ) else (
-        echo [SKIP] Could not auto-download llama-server.exe
+        echo [SKIP] Could not auto-download llama-server bundle
         echo        Download manually from:
         echo        https://github.com/ggml-org/llama.cpp/releases
-        echo        and place it next to start_windows.bat
+        echo        and extract into: .\llama-cpp\
     )
 )
 
