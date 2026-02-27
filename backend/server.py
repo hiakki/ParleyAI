@@ -13,6 +13,7 @@ import logging
 import sys
 import time
 import uuid
+import glob
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -67,7 +68,20 @@ def resolve_model_path(path_env: str | None, quant: str, model_family: str) -> s
         if not filename:
             return None
         full_path = os.path.join(path, filename)
-        return full_path if os.path.exists(full_path) else None
+        if os.path.exists(full_path):
+            return full_path
+
+        # Fallback: allow variant filenames like *_2.gguf in the same directory.
+        stem = os.path.splitext(filename)[0]
+        variant_matches = sorted(glob.glob(os.path.join(path, f"{stem}*.gguf")))
+        if variant_matches:
+            return variant_matches[0]
+
+        # Last resort: if there's exactly one GGUF file, use it.
+        gguf_matches = sorted(glob.glob(os.path.join(path, "*.gguf")))
+        if len(gguf_matches) == 1:
+            return gguf_matches[0]
+        return None
     
     if os.path.isfile(path):
         return path
@@ -85,7 +99,7 @@ async def lifespan(app: FastAPI):
     """Initialize the transformer on startup."""
     global transformer
     logger.info("=" * 60)
-    logger.info("🦙 Initializing Backend Server")
+    logger.info("Initializing Backend Server")
     logger.info("=" * 60)
     logger.info(f"Model family: {MODEL_FAMILY} ({MODEL_FAMILIES.get(MODEL_FAMILY, {}).get('name', '')})")
     logger.info(f"Log file: {log_filename}")
@@ -93,7 +107,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Context: {CTX} tokens")
     logger.info(f"Batch Size: {BATCH_SIZE}")
     logger.info(f"GPU Layers: {GPU_LAYERS}")
-    logger.info(f"Optimizations: Flash Attention ✓, KV Offload ✓")
+    logger.info("Optimizations: Flash Attention enabled, KV Offload enabled")
     if MODEL_PATH:
         logger.info(f"Model Path: {MODEL_PATH}")
     
@@ -106,14 +120,14 @@ async def lifespan(app: FastAPI):
             n_gpu_layers=GPU_LAYERS,
             n_batch=BATCH_SIZE,
         )
-        logger.info("✓ Model loaded successfully!")
+        logger.info("Model loaded successfully")
     except Exception as e:
         logger.error(f"Failed to load model: {e}")
         raise
     
-    logger.info("✓ Server ready!")
+    logger.info("Server ready")
     yield
-    logger.info("👋 Shutting down...")
+    logger.info("Shutting down...")
     if transformer and isinstance(transformer, LlamaServerTransformer):
         transformer.shutdown()
 

@@ -8,6 +8,10 @@ echo =====================================================
 echo   ParleyAI - Windows Setup (NVIDIA CUDA)
 echo =====================================================
 echo.
+echo IMPORTANT:
+echo   Run this script from "x64 Native Tools Command Prompt for VS 2022"
+echo   and launch that terminal as Administrator.
+echo.
 
 :: ========================================
 :: Check for winget (built into Win 10/11)
@@ -497,20 +501,39 @@ echo =====================================================
 echo   Setup Complete!
 echo =====================================================
 echo.
-echo To start the application:
+echo Run commands based on your shell:
+echo.
+echo [1] CMD / x64 Native Tools Command Prompt:
 echo   .\start_windows.bat
 echo.
-echo To expose over the internet:
+echo   :: Expose to internet
 echo   set TUNNEL=on
+echo   set TUNNEL_TOOL=cloudflared
 echo   .\start_windows.bat
 echo.
-echo To use a specific model:
+echo   :: Custom model / lower VRAM
 echo   set MODEL_PATH=C:\path\to\models
 echo   set QUANT=IQ2_XXS
 echo   set GPU_LAYERS=20
 echo   .\start_windows.bat
 echo.
-echo See README.md for GPU-specific recommendations.
+echo [2] Windows PowerShell:
+echo   .\start_windows.bat
+echo.
+echo   # Expose to internet
+echo   $env:TUNNEL='on'
+echo   $env:TUNNEL_TOOL='cloudflared'
+echo   .\start_windows.bat
+echo.
+echo   # Custom model / lower VRAM
+echo   $env:MODEL_PATH='C:\path\to\models'
+echo   $env:QUANT='IQ2_XXS'
+echo   $env:GPU_LAYERS='20'
+echo   .\start_windows.bat
+echo.
+echo Tip: CMD uses "set VAR=value", PowerShell uses "$env:VAR='value'".
+echo.
+echo See README.md for GPU and model recommendations.
 echo.
 
 pause
