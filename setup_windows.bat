@@ -504,12 +504,20 @@ echo ========================================
 if exist "llama-server.exe" (
     echo [OK] llama-server.exe already present: %CD%\llama-server.exe
 ) else (
-    echo Downloading latest llama-server for Windows...
+    echo Downloading llama-server for Windows...
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
       "$ErrorActionPreference='Stop';" ^
       "$api='https://api.github.com/repos/ggml-org/llama.cpp/releases/latest';" ^
       "$rel=Invoke-RestMethod -Uri $api -Headers @{ 'User-Agent'='ParleyAI-Setup' };" ^
-      "$asset=$rel.assets | Where-Object { $_.name -match 'win.*\.zip$' -and $_.name -match 'cuda|cu12|vulkan|metal|cpu' } | Select-Object -First 1;" ^
+      "$cudaMajor='';" ^
+      "try { $nvcc=(nvcc --version 2>$null | Out-String); if ($nvcc -match 'release\s+([0-9]+)\.([0-9]+)') { $cudaMajor=$Matches[1] } } catch {};" ^
+      "$preferred=@();" ^
+      "if ($cudaMajor -eq '13') { $preferred += 'cudart-llama-bin-win-cuda-13.1-x64.zip' };" ^
+      "$preferred += 'cudart-llama-bin-win-cuda-12.4-x64.zip';" ^
+      "if ($cudaMajor -eq '12') { $preferred = @('cudart-llama-bin-win-cuda-12.4-x64.zip','cudart-llama-bin-win-cuda-13.1-x64.zip') };" ^
+      "$asset=$null;" ^
+      "foreach ($name in $preferred) { $asset = $rel.assets | Where-Object { $_.name -eq $name } | Select-Object -First 1; if ($asset) { break } };" ^
+      "if (-not $asset) { $asset=$rel.assets | Where-Object { $_.name -match '^cudart-llama-bin-win-cuda-.*-x64\.zip$' } | Select-Object -First 1 };" ^
       "if (-not $asset) { $asset=$rel.assets | Where-Object { $_.name -match 'win.*\.zip$' } | Select-Object -First 1 };" ^
       "if (-not $asset) { throw 'No Windows release asset found for llama.cpp' };" ^
       "$zip=Join-Path $env:TEMP 'llama_cpp_win.zip';" ^
@@ -520,10 +528,15 @@ if exist "llama-server.exe" (
       "Expand-Archive -Path $zip -DestinationPath $dir -Force;" ^
       "$exe=Get-ChildItem -Path $dir -Recurse -Filter 'llama-server.exe' | Select-Object -First 1;" ^
       "if (-not $exe) { throw 'llama-server.exe not found in downloaded archive' };" ^
-      "Copy-Item $exe.FullName -Destination (Join-Path '%CD%' 'llama-server.exe') -Force;" ^
-      "Write-Host ('Downloaded: ' + $asset.name)"
+      "$targetDir='%CD%';" ^
+      "Copy-Item $exe.FullName -Destination (Join-Path $targetDir 'llama-server.exe') -Force;" ^
+      "$exeDir=Split-Path -Parent $exe.FullName;" ^
+      "Get-ChildItem -Path $exeDir -Filter '*.dll' -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName -Destination (Join-Path $targetDir $_.Name) -Force };" ^
+      "Write-Host ('Downloaded asset: ' + $asset.name);" ^
+      "Write-Host ('Installed: ' + (Join-Path $targetDir 'llama-server.exe'));"
     if !ERRORLEVEL!==0 (
         echo [OK] llama-server.exe downloaded to: %CD%\llama-server.exe
+        echo     Any required DLLs from the archive were copied next to it.
     ) else (
         echo [SKIP] Could not auto-download llama-server.exe
         echo        Download manually from:
