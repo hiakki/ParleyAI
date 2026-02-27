@@ -496,6 +496,42 @@ if %ERRORLEVEL%==0 (
     )
 )
 
+:: llama-server (required for LFM2 model family)
+echo.
+echo ========================================
+echo   Setting up llama-server (LFM2)
+echo ========================================
+if exist "llama-server.exe" (
+    echo [OK] llama-server.exe already present: %CD%\llama-server.exe
+) else (
+    echo Downloading latest llama-server for Windows...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+      "$ErrorActionPreference='Stop';" ^
+      "$api='https://api.github.com/repos/ggml-org/llama.cpp/releases/latest';" ^
+      "$rel=Invoke-RestMethod -Uri $api -Headers @{ 'User-Agent'='ParleyAI-Setup' };" ^
+      "$asset=$rel.assets | Where-Object { $_.name -match 'win.*\.zip$' -and $_.name -match 'cuda|cu12|vulkan|metal|cpu' } | Select-Object -First 1;" ^
+      "if (-not $asset) { $asset=$rel.assets | Where-Object { $_.name -match 'win.*\.zip$' } | Select-Object -First 1 };" ^
+      "if (-not $asset) { throw 'No Windows release asset found for llama.cpp' };" ^
+      "$zip=Join-Path $env:TEMP 'llama_cpp_win.zip';" ^
+      "$dir=Join-Path $env:TEMP 'llama_cpp_win_extract';" ^
+      "if (Test-Path $zip) { Remove-Item $zip -Force };" ^
+      "if (Test-Path $dir) { Remove-Item $dir -Recurse -Force };" ^
+      "Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip -UseBasicParsing;" ^
+      "Expand-Archive -Path $zip -DestinationPath $dir -Force;" ^
+      "$exe=Get-ChildItem -Path $dir -Recurse -Filter 'llama-server.exe' | Select-Object -First 1;" ^
+      "if (-not $exe) { throw 'llama-server.exe not found in downloaded archive' };" ^
+      "Copy-Item $exe.FullName -Destination (Join-Path '%CD%' 'llama-server.exe') -Force;" ^
+      "Write-Host ('Downloaded: ' + $asset.name)"
+    if !ERRORLEVEL!==0 (
+        echo [OK] llama-server.exe downloaded to: %CD%\llama-server.exe
+    ) else (
+        echo [SKIP] Could not auto-download llama-server.exe
+        echo        Download manually from:
+        echo        https://github.com/ggml-org/llama.cpp/releases
+        echo        and place it next to start_windows.bat
+    )
+)
+
 echo.
 echo =====================================================
 echo   Setup Complete!

@@ -859,12 +859,16 @@ class LlamaServerTransformer:
         family_info = MODEL_FAMILIES[model_family]
         self._family_name = family_info["name"]
 
-        self._llama_server_bin = shutil.which("llama-server")
+        self._llama_server_bin = self._resolve_llama_server_bin()
         if self._llama_server_bin is None:
             raise RuntimeError(
-                "llama-server not found on PATH. "
-                "Install via: brew install llama.cpp  (macOS) or download from "
-                "https://github.com/ggml-org/llama.cpp/releases"
+                "llama-server not found.\n"
+                "Set LLAMA_SERVER_PATH to the llama-server executable, or put it on PATH.\n"
+                "macOS: brew install llama.cpp\n"
+                "Windows: download llama-server.exe from llama.cpp releases and either:\n"
+                "  1) place it at backend\\bin\\llama-server.exe, or\n"
+                "  2) set LLAMA_SERVER_PATH=C:\\path\\to\\llama-server.exe\n"
+                "Releases: https://github.com/ggml-org/llama.cpp/releases"
             )
 
         if not Path(model_path).exists():
@@ -896,6 +900,33 @@ class LlamaServerTransformer:
             print(f"llama-server port: {self.LLAMA_SERVER_PORT}")
             print(f"{'='*60}")
             print("✓ Ready (llama-server will start on first request)\n")
+
+    def _resolve_llama_server_bin(self) -> Optional[str]:
+        """Find llama-server executable from env, PATH, or common local locations."""
+        env_path = os.getenv("LLAMA_SERVER_PATH", "").strip()
+        if env_path:
+            p = Path(os.path.expanduser(env_path))
+            if p.exists() and p.is_file():
+                return str(p)
+
+        for name in ("llama-server", "llama-server.exe"):
+            found = shutil.which(name)
+            if found:
+                return found
+
+        # Common local fallback locations (helps Windows users avoid global PATH edits).
+        candidates = [
+            Path(__file__).resolve().parent.parent / "llama-server.exe",
+            Path(__file__).resolve().parent.parent / "llama-server",
+            Path(__file__).resolve().parent / "bin" / "llama-server.exe",
+            Path(__file__).resolve().parent / "bin" / "llama-server",
+            Path.home() / "bin" / "llama-server.exe",
+            Path.home() / "bin" / "llama-server",
+        ]
+        for c in candidates:
+            if c.exists() and c.is_file():
+                return str(c)
+        return None
 
     # ------------------------------------------------------------------
     # Lifecycle: lazy start, idle shutdown

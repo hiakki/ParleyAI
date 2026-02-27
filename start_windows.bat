@@ -76,6 +76,8 @@ if "%GPU_LAYERS%"=="" set GPU_LAYERS=-1
 if "%BATCH_SIZE%"=="" set BATCH_SIZE=512
 if "%TUNNEL%"=="" set TUNNEL=off
 if "%TUNNEL_TOOL%"=="" set TUNNEL_TOOL=auto
+if "%LLAMA_SERVER_PATH%"=="" if exist "llama-server.exe" set "LLAMA_SERVER_PATH=%CD%\llama-server.exe"
+if "%LLAMA_SERVER_PATH%"=="" if exist "backend\bin\llama-server.exe" set "LLAMA_SERVER_PATH=%CD%\backend\bin\llama-server.exe"
 
 :: Display configuration
 echo Configuration:
@@ -85,7 +87,22 @@ echo   Context:      %CTX% tokens
 echo   GPU Layers:   %GPU_LAYERS%
 echo   Batch Size:   %BATCH_SIZE%
 if defined MODEL_PATH echo   Model Path:   %MODEL_PATH%
+if defined LLAMA_SERVER_PATH echo   Llama Server: %LLAMA_SERVER_PATH%
 echo.
+
+if /i "%MODEL_FAMILY%"=="lfm2_24b" (
+    where llama-server >nul 2>&1
+    if !ERRORLEVEL! neq 0 (
+        if not defined LLAMA_SERVER_PATH (
+            echo [WARN] llama-server not found on PATH.
+            echo       For LFM2 on Windows, place llama-server.exe at:
+            echo         .\llama-server.exe
+            echo       OR set:
+            echo         set LLAMA_SERVER_PATH=C:\path\to\llama-server.exe
+            echo.
+        )
+    )
+)
 
 :: Check if backend venv exists
 if not exist "backend\venv\Scripts\activate.bat" (
