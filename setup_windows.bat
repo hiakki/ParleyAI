@@ -568,12 +568,16 @@ if exist "llama-cpp\llama-server.exe" (
       "if (Test-Path $extractTmp) { Remove-Item $extractTmp -Recurse -Force };" ^
       "if (Test-Path $targetDir) { Remove-Item $targetDir -Recurse -Force };" ^
       "New-Item -ItemType Directory -Path $targetDir -Force | Out-Null;" ^
-      "if ($needDownload) { Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archivePath -UseBasicParsing };" ^
+      "if ($needDownload) { Write-Host ('Downloading ' + [math]::Round($expectedSize/1MB,1) + ' MB ...'); Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archivePath -UseBasicParsing; Write-Host 'Download complete.' };" ^
+      "Write-Host ('Extracting: ' + $archivePath + ' (' + [math]::Round((Get-Item $archivePath).Length/1MB,1) + ' MB)');" ^
+      "New-Item -ItemType Directory -Path $extractTmp -Force | Out-Null;" ^
       "if ($asset.name -like '*.zip') {" ^
-      "  $ok=$false;" ^
-      "  try { Expand-Archive -Path $archivePath -DestinationPath $extractTmp -Force; $ok=$true } catch { Write-Host ('Expand-Archive failed: ' + $_.Exception.Message) };" ^
-      "  if (-not $ok) { try { New-Item -ItemType Directory -Path $extractTmp -Force | Out-Null; tar -xf $archivePath -C $extractTmp; $ok=$true } catch { Write-Host ('tar extract failed: ' + $_.Exception.Message) } };" ^
-      "  if (-not $ok) { throw ('Failed to extract zip archive: ' + $archivePath) }" ^
+      "  $ok=$false; $errs=@();" ^
+      "  if (-not $ok) { try { $p=Start-Process -FilePath 'tar' -ArgumentList @('-xf',$archivePath,'-C',$extractTmp) -Wait -PassThru -NoNewWindow; if ($p.ExitCode -eq 0) { $ok=$true; Write-Host 'Extracted via: tar' } else { $errs += ('tar exit code ' + $p.ExitCode) } } catch { $errs += ('tar: ' + $_.Exception.Message) } };" ^
+      "  if (-not $ok) { try { Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory($archivePath, $extractTmp); $ok=$true; Write-Host 'Extracted via: .NET ZipFile' } catch { $errs += ('.NET ZipFile: ' + $_.Exception.Message) } };" ^
+      "  if (-not $ok) { try { Expand-Archive -Path $archivePath -DestinationPath $extractTmp -Force; $ok=$true; Write-Host 'Extracted via: Expand-Archive' } catch { $errs += ('Expand-Archive: ' + $_.Exception.Message) } };" ^
+      "  if (-not $ok) { $7z=Get-Command '7z' -ErrorAction SilentlyContinue; if ($7z) { try { ^& 7z x $archivePath ('-o' + $extractTmp) -y | Out-Null; $ok=$true; Write-Host 'Extracted via: 7z' } catch { $errs += ('7z: ' + $_.Exception.Message) } } };" ^
+      "  if (-not $ok) { foreach ($e in $errs) { Write-Host ('  FAIL: ' + $e) }; throw ('All extraction methods failed for: ' + $archivePath) }" ^
       "} elseif ($asset.name -like '*.tar.gz' -or $asset.name -like '*.tgz') {" ^
       "  New-Item -ItemType Directory -Path $extractTmp -Force | Out-Null; tar -xzf $archivePath -C $extractTmp" ^
       "} elseif ($asset.name -like '*.exe') {" ^
