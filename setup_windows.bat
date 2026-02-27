@@ -574,9 +574,7 @@ if exist "llama-cpp\llama-server.exe" (
       "if ($asset.name -like '*.zip') {" ^
       "  $ok=$false; $errs=@();" ^
       "  if (-not $ok) { try { $p=Start-Process -FilePath 'tar' -ArgumentList @('-xf',$archivePath,'-C',$extractTmp) -Wait -PassThru -NoNewWindow; if ($p.ExitCode -eq 0) { $ok=$true; Write-Host 'Extracted via: tar' } else { $errs += ('tar exit code ' + $p.ExitCode) } } catch { $errs += ('tar: ' + $_.Exception.Message) } };" ^
-      "  if (-not $ok) { try { Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory($archivePath, $extractTmp); $ok=$true; Write-Host 'Extracted via: .NET ZipFile' } catch { $errs += ('.NET ZipFile: ' + $_.Exception.Message) } };" ^
-      "  if (-not $ok) { try { Expand-Archive -Path $archivePath -DestinationPath $extractTmp -Force; $ok=$true; Write-Host 'Extracted via: Expand-Archive' } catch { $errs += ('Expand-Archive: ' + $_.Exception.Message) } };" ^
-      "  if (-not $ok) { $7z=Get-Command '7z' -ErrorAction SilentlyContinue; if ($7z) { try { $p=Start-Process -FilePath '7z' -ArgumentList @('x',$archivePath,('-o'+$extractTmp),'-y') -Wait -PassThru -NoNewWindow; if ($p.ExitCode -eq 0) { $ok=$true; Write-Host 'Extracted via: 7z' } else { $errs += ('7z exit code ' + $p.ExitCode) } } catch { $errs += ('7z: ' + $_.Exception.Message) } } };" ^
+      "  if (-not $ok) { try { $p=Start-Process -FilePath 'python' -ArgumentList @('-c','import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])',$archivePath,$extractTmp) -Wait -PassThru -NoNewWindow; if ($p.ExitCode -eq 0) { $ok=$true; Write-Host 'Extracted via: python zipfile' } else { $errs += ('python zipfile exit code ' + $p.ExitCode) } } catch { $errs += ('python zipfile: ' + $_.Exception.Message) } };" ^
       "  if (-not $ok) { foreach ($e in $errs) { Write-Host ('  FAIL: ' + $e) }; throw ('All extraction methods failed for: ' + $archivePath) }" ^
       "} elseif ($asset.name -like '*.tar.gz' -or $asset.name -like '*.tgz') {" ^
       "  New-Item -ItemType Directory -Path $extractTmp -Force | Out-Null; tar -xzf $archivePath -C $extractTmp" ^
