@@ -510,7 +510,8 @@ if exist "llama-cpp\llama-server.exe" (
       "$ErrorActionPreference='Stop';" ^
       "$api='https://api.github.com/repos/ggml-org/llama.cpp/releases/latest';" ^
       "$rel=Invoke-RestMethod -Uri $api -Headers @{ 'User-Agent'='ParleyAI-Setup' };" ^
-      "$gpuName=''; try { $gpus=(Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name); if ($gpus) { $pick=$gpus | Where-Object { $_ -match 'NVIDIA|GeForce|RTX|Quadro' } | Select-Object -First 1; if (-not $pick) { $pick=$gpus | Select-Object -First 1 }; if ($pick) { $gpuName=$pick.ToLowerInvariant() } } } catch {};" ^
+      "$gpuName=''; $allGpus=@(); try { $allGpus=(Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name) } catch {};" ^
+      "if ($allGpus) { $pick=$allGpus | Where-Object { $_ -match 'NVIDIA|GeForce|RTX|Quadro' } | Select-Object -First 1; if (-not $pick) { $pick=$allGpus | Select-Object -First 1 }; if ($pick) { $gpuName=$pick.ToLowerInvariant() } };" ^
       "$isNvidia = $gpuName -match 'nvidia|geforce|rtx|quadro';" ^
       "$isAmd = $gpuName -match 'amd|radeon';" ^
       "$isIntel = $gpuName -match 'intel';" ^
@@ -536,31 +537,52 @@ if exist "llama-cpp\llama-server.exe" (
       "  if ($asset) { break }" ^
       "};" ^
       "if (-not $asset) { $asset=$rel.assets | Where-Object { $_.name -match '^cudart-llama-bin-win-cuda-.*-x64\.zip$' } | Select-Object -First 1 };" ^
-      "if (-not $asset) { $asset=$rel.assets | Where-Object { $_.name -match 'win.*(cpu|vulkan|cuda).*x64\.zip$' } | Select-Object -First 1 };" ^
-      "if (-not $asset) { throw 'No Windows release asset found for llama.cpp' };" ^
-      "$zip=Join-Path $env:TEMP 'llama_cpp_win.zip';" ^
-      "$dir=Join-Path $env:TEMP 'llama_cpp_win_extract';" ^
+      "if (-not $asset) { $asset=$rel.assets | Where-Object { $_.name -match '^llama-b[0-9]+-bin-win-(cpu|vulkan|sycl|hip)-x64\.(zip|tar\.gz)$' } | Select-Object -First 1 };" ^
+      "if (-not $asset) { throw 'No supported Windows binary asset found for llama.cpp release' };" ^
+      "$archivePath=Join-Path '%CD%' $asset.name;" ^
+      "$extractTmp=Join-Path $env:TEMP 'llama_cpp_win_extract';" ^
       "$targetDir=Join-Path '%CD%' 'llama-cpp';" ^
-      "if (Test-Path $zip) { Remove-Item $zip -Force };" ^
-      "if (Test-Path $dir) { Remove-Item $dir -Recurse -Force };" ^
+      "if (Test-Path $archivePath) { Remove-Item $archivePath -Force };" ^
+      "if (Test-Path $extractTmp) { Remove-Item $extractTmp -Recurse -Force };" ^
       "if (Test-Path $targetDir) { Remove-Item $targetDir -Recurse -Force };" ^
       "New-Item -ItemType Directory -Path $targetDir -Force | Out-Null;" ^
-      "Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip -UseBasicParsing;" ^
-      "Expand-Archive -Path $zip -DestinationPath $dir -Force;" ^
-      "$exe=Get-ChildItem -Path $dir -Recurse -Filter 'llama-server.exe' | Select-Object -First 1;" ^
-      "if (-not $exe) { throw 'llama-server.exe not found in downloaded archive' };" ^
+      "Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archivePath -UseBasicParsing;" ^
+      "if ($asset.name -like '*.zip') {" ^
+      "  Expand-Archive -Path $archivePath -DestinationPath $extractTmp -Force" ^
+      "} elseif ($asset.name -like '*.tar.gz' -or $asset.name -like '*.tgz') {" ^
+      "  New-Item -ItemType Directory -Path $extractTmp -Force | Out-Null; tar -xzf $archivePath -C $extractTmp" ^
+      "} elseif ($asset.name -like '*.exe') {" ^
+      "  Copy-Item $archivePath -Destination (Join-Path $targetDir 'llama-server.exe') -Force" ^
+      "} else { throw ('Unsupported archive format: ' + $asset.name) };" ^
+      "$searchRoot = if ($asset.name -like '*.exe') { $targetDir } else { $extractTmp };" ^
+      "$exe=Get-ChildItem -Path $searchRoot -Recurse -File | Where-Object { $_.Name -ieq 'llama-server.exe' -or $_.Name -ieq 'llama-server' } | Select-Object -First 1;" ^
+      "if (-not $exe) {" ^
+      "  $exeList=(Get-ChildItem -Path $searchRoot -Recurse -File -Filter '*.exe' | Select-Object -ExpandProperty Name | Sort-Object -Unique) -join ', ';" ^
+      "  throw ('llama-server executable not found. EXEs discovered: ' + $exeList)" ^
+      "};" ^
       "$exeDir=Split-Path -Parent $exe.FullName;" ^
       "Get-ChildItem -Path $exeDir -File | ForEach-Object { Copy-Item $_.FullName -Destination (Join-Path $targetDir $_.Name) -Force };" ^
+      "$candidateLibDirs=@($exeDir);" ^
+      "Get-ChildItem -Path $searchRoot -Recurse -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'bin|lib|cuda|vulkan' } | ForEach-Object { $candidateLibDirs += $_.FullName };" ^
+      "$candidateLibDirs = $candidateLibDirs | Select-Object -Unique;" ^
+      "foreach ($d in $candidateLibDirs) { Get-ChildItem -Path $d -File -Filter '*.dll' -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName -Destination (Join-Path $targetDir $_.Name) -Force } };" ^
+      "$cpuArchName = switch ($cpuArch) { 9 {'x64'} 12 {'arm64'} default {$cpuArch} };" ^
       "Write-Host ('Downloaded asset: ' + $asset.name);" ^
-      "Write-Host ('GPU detected: ' + $gpuName);" ^
+      "Write-Host ('All GPUs: ' + (($allGpus -join ' | ')));" ^
+      "Write-Host ('Selected GPU: ' + $gpuName);" ^
+      "Write-Host ('CPU arch: ' + $cpuArchName);" ^
+      "Write-Host ('isNvidia=' + $isNvidia + ', isAmd=' + $isAmd + ', isIntel=' + $isIntel);" ^
       "$cudaShown='not-detected'; if ($cudaMajor -ne '') { $cudaShown=$cudaMajor };" ^
       "Write-Host ('CUDA major: ' + $cudaShown);" ^
+      "Write-Host ('Preferred candidates: ' + ($preferred -join ', '));" ^
+      "Write-Host ('Saved archive: ' + $archivePath);" ^
       "Write-Host ('Installed in: ' + $targetDir);"
     if !ERRORLEVEL!==0 (
         echo [OK] llama-server downloaded to: %CD%\llama-cpp\
         echo     Includes llama-server.exe and required runtime files.
     ) else (
         echo [SKIP] Could not auto-download llama-server bundle
+        echo       It now prints all detection parameters above.
         echo        Download manually from:
         echo        https://github.com/ggml-org/llama.cpp/releases
         echo        and extract into: .\llama-cpp\
