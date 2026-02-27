@@ -115,8 +115,9 @@ if "%LOCAL_IP%"=="" set LOCAL_IP=?.?.?.?
 echo Starting backend server...
 if not exist "backend\logs" mkdir "backend\logs"
 set "BACKEND_LOG=%CD%\backend\logs\windows_backend_runtime.log"
+if not exist "%BACKEND_LOG%" type nul > "%BACKEND_LOG%"
 cd backend
-start "ParleyAI Backend" cmd /c "call venv\Scripts\activate.bat && python -u -m uvicorn server:app --host 127.0.0.1 --port 8000 >> \"%BACKEND_LOG%\" 2>&1"
+start "ParleyAI Backend" cmd /c "call venv\Scripts\activate.bat ^&^& python -u -m uvicorn server:app --host 127.0.0.1 --port 8000 >> ""%BACKEND_LOG%"" 2>&1"
 cd ..
 
 :: Wait for backend to be ready
@@ -161,8 +162,9 @@ echo set ANTHROPIC_MODEL=parleyai>> .claude_env.bat
 :: Start frontend
 echo Starting frontend...
 set "FRONTEND_LOG=%CD%\frontend\windows_frontend_runtime.log"
+if not exist "%FRONTEND_LOG%" type nul > "%FRONTEND_LOG%"
 cd frontend
-start "ParleyAI Frontend" cmd /c "npm run dev >> \"%FRONTEND_LOG%\" 2>&1"
+start "ParleyAI Frontend" cmd /c "npm run dev >> ""%FRONTEND_LOG%"" 2>&1"
 cd ..
 
 :: Start tunnel if requested
