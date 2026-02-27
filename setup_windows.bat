@@ -8,89 +8,234 @@ echo =====================================================
 echo.
 
 :: ========================================
-:: Check Prerequisites
+:: Check for winget (built into Win 10/11)
+:: ========================================
+set HAS_WINGET=0
+where winget >nul 2>&1
+if !ERRORLEVEL!==0 set HAS_WINGET=1
+
+:: ========================================
+:: Check and Auto-Install Prerequisites
 :: ========================================
 echo Checking prerequisites...
 echo.
+set NEED_PATH_REFRESH=0
+set NEED_RESTART=0
 
-:: Check Python
+:: ---- Python ----
 python --version >nul 2>&1
-if %ERRORLEVEL% neq 0 (
+if !ERRORLEVEL! neq 0 (
     echo [X] Python - NOT FOUND
-    echo     Install from: https://www.python.org/downloads/
-    echo     Make sure to check "Add Python to PATH" during installation
-    set MISSING_DEPS=1
+    if !HAS_WINGET!==1 (
+        echo     Installing Python via winget...
+        winget install -e --id Python.Python.3.12 --accept-source-agreements --accept-package-agreements
+        if !ERRORLEVEL!==0 (
+            echo     [OK] Python installed
+            set NEED_PATH_REFRESH=1
+        ) else (
+            echo     [!] winget install failed — install manually: https://www.python.org/downloads/
+            echo         Make sure to check "Add Python to PATH" during installation
+            set MISSING_CRITICAL=1
+        )
+    ) else (
+        echo     Install from: https://www.python.org/downloads/
+        echo     Make sure to check "Add Python to PATH" during installation
+        set MISSING_CRITICAL=1
+    )
 ) else (
     for /f "tokens=2" %%i in ('python --version 2^>^&1') do echo [OK] Python %%i
 )
 
-:: Check Node.js
+:: ---- Node.js ----
 node --version >nul 2>&1
-if %ERRORLEVEL% neq 0 (
+if !ERRORLEVEL! neq 0 (
     echo [X] Node.js - NOT FOUND
-    echo     Install from: https://nodejs.org/
-    set MISSING_DEPS=1
+    if !HAS_WINGET!==1 (
+        echo     Installing Node.js LTS via winget...
+        winget install -e --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements
+        if !ERRORLEVEL!==0 (
+            echo     [OK] Node.js installed
+            set NEED_PATH_REFRESH=1
+        ) else (
+            echo     [!] winget install failed — install manually: https://nodejs.org/
+            set MISSING_CRITICAL=1
+        )
+    ) else (
+        echo     Install from: https://nodejs.org/
+        set MISSING_CRITICAL=1
+    )
 ) else (
     for /f "tokens=1" %%i in ('node --version 2^>^&1') do echo [OK] Node.js %%i
 )
 
-:: Check NVIDIA Driver
+:: ---- NVIDIA Driver ----
 nvidia-smi >nul 2>&1
-if %ERRORLEVEL% neq 0 (
+if !ERRORLEVEL! neq 0 (
     echo [X] NVIDIA Driver - NOT FOUND
     echo     Install from: https://www.nvidia.com/Download/index.aspx
-    set MISSING_DEPS=1
+    echo     ^(Driver is GPU-specific — automatic install is not recommended^)
+    set MISSING_CRITICAL=1
 ) else (
     for /f "tokens=3" %%i in ('nvidia-smi --query-gpu=driver_version --format=csv,noheader 2^>^&1') do echo [OK] NVIDIA Driver
     nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 )
 
-:: Check CUDA Toolkit (nvcc compiler)
-nvcc --version >nul 2>&1
-if %ERRORLEVEL% neq 0 (
-    echo [X] CUDA Toolkit - NOT FOUND
-    echo     Install CUDA 12.x from: https://developer.nvidia.com/cuda-downloads
-    echo     After install, add to PATH: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.x\bin
-    set MISSING_CUDA=1
-) else (
-    for /f "tokens=5" %%i in ('nvcc --version 2^>^&1 ^| findstr release') do echo [OK] CUDA Toolkit %%i
-)
-
-:: Check CMake
+:: ---- CMake ----
 cmake --version >nul 2>&1
-if %ERRORLEVEL% neq 0 (
+if !ERRORLEVEL! neq 0 (
     echo [X] CMake - NOT FOUND
-    echo     Install from: https://cmake.org/download/
-    echo     Or run: winget install Kitware.CMake
-    set MISSING_DEPS=1
+    if !HAS_WINGET!==1 (
+        echo     Installing CMake via winget...
+        winget install -e --id Kitware.CMake --accept-source-agreements --accept-package-agreements
+        if !ERRORLEVEL!==0 (
+            echo     [OK] CMake installed
+            set NEED_PATH_REFRESH=1
+        ) else (
+            echo     [!] winget install failed — install manually: https://cmake.org/download/
+            set MISSING_CRITICAL=1
+        )
+    ) else (
+        echo     Install from: https://cmake.org/download/
+        set MISSING_CRITICAL=1
+    )
 ) else (
     for /f "tokens=3" %%i in ('cmake --version 2^>^&1 ^| findstr version') do echo [OK] CMake %%i
 )
 
-:: Check Visual Studio Build Tools (cl.exe)
+:: ---- CUDA Toolkit ----
+nvcc --version >nul 2>&1
+if !ERRORLEVEL! neq 0 (
+    echo [X] CUDA Toolkit - NOT FOUND
+    if !HAS_WINGET!==1 (
+        echo     Installing CUDA Toolkit via winget ^(~3 GB, may take a while^)...
+        winget install -e --id Nvidia.CUDA --accept-source-agreements --accept-package-agreements
+        if !ERRORLEVEL!==0 (
+            echo     [OK] CUDA Toolkit installed
+            set NEED_PATH_REFRESH=1
+        ) else (
+            echo     [!] winget install failed
+            echo     Install CUDA 12.x manually: https://developer.nvidia.com/cuda-downloads
+            set MISSING_CUDA=1
+        )
+    ) else (
+        echo     Install CUDA 12.x from: https://developer.nvidia.com/cuda-downloads
+        set MISSING_CUDA=1
+    )
+) else (
+    for /f "tokens=5" %%i in ('nvcc --version 2^>^&1 ^| findstr release') do echo [OK] CUDA Toolkit %%i
+)
+
+:: ---- Visual Studio Build Tools ----
 where cl >nul 2>&1
-if %ERRORLEVEL% neq 0 (
+if !ERRORLEVEL! neq 0 (
     echo [X] Visual Studio Build Tools - NOT FOUND or not in PATH
-    echo     Install "Desktop development with C++" from:
-    echo     https://visualstudio.microsoft.com/visual-cpp-build-tools/
-    echo.
-    echo     IMPORTANT: After installing, run this script from
-    echo     "Developer Command Prompt for VS" or "x64 Native Tools Command Prompt"
-    set MISSING_VS=1
+    if !HAS_WINGET!==1 (
+        echo     Installing VS Build Tools with C++ workload via winget...
+        echo     ^(This is a large download and may take 10-20 minutes^)
+        winget install -e --id Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --wait" --accept-source-agreements --accept-package-agreements
+        if !ERRORLEVEL!==0 (
+            echo     [OK] VS Build Tools installed
+            set NEED_PATH_REFRESH=1
+            set NEED_RESTART=1
+        ) else (
+            echo     [!] winget install failed
+            echo     Install "Desktop development with C++" from:
+            echo     https://visualstudio.microsoft.com/visual-cpp-build-tools/
+            set MISSING_VS=1
+        )
+    ) else (
+        echo     Install "Desktop development with C++" from:
+        echo     https://visualstudio.microsoft.com/visual-cpp-build-tools/
+        set MISSING_VS=1
+    )
 ) else (
     echo [OK] Visual Studio Build Tools ^(cl.exe found^)
 )
 
 echo.
 
-:: Exit if missing critical dependencies
-if defined MISSING_DEPS (
+:: ========================================
+:: Refresh PATH if we installed anything
+:: ========================================
+if !NEED_PATH_REFRESH!==1 (
+    echo Refreshing PATH to pick up new installations...
+    for /f "tokens=2*" %%a in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path 2^>nul') do set "SYS_PATH=%%b"
+    for /f "tokens=2*" %%a in ('reg query "HKCU\Environment" /v Path 2^>nul') do set "USR_PATH=%%b"
+    set "PATH=!SYS_PATH!;!USR_PATH!"
+    echo.
+)
+
+:: ========================================
+:: Re-verify after installs
+:: ========================================
+if !NEED_PATH_REFRESH!==1 (
+    echo Re-checking after installation...
+    echo.
+    set STILL_MISSING=0
+
+    python --version >nul 2>&1
+    if !ERRORLEVEL! neq 0 (
+        echo [X] Python still not in PATH
+        set STILL_MISSING=1
+    ) else (
+        for /f "tokens=2" %%i in ('python --version 2^>^&1') do echo [OK] Python %%i
+    )
+
+    node --version >nul 2>&1
+    if !ERRORLEVEL! neq 0 (
+        echo [X] Node.js still not in PATH
+        set STILL_MISSING=1
+    ) else (
+        for /f "tokens=1" %%i in ('node --version 2^>^&1') do echo [OK] Node.js %%i
+    )
+
+    cmake --version >nul 2>&1
+    if !ERRORLEVEL! neq 0 (
+        echo [X] CMake still not in PATH
+        set STILL_MISSING=1
+    ) else (
+        for /f "tokens=3" %%i in ('cmake --version 2^>^&1 ^| findstr version') do echo [OK] CMake %%i
+    )
+
+    nvcc --version >nul 2>&1
+    if !ERRORLEVEL! neq 0 (
+        echo [  ] CUDA nvcc not yet in PATH ^(may need terminal restart^)
+    ) else (
+        for /f "tokens=5" %%i in ('nvcc --version 2^>^&1 ^| findstr release') do echo [OK] CUDA Toolkit %%i
+    )
+
+    echo.
+    if !STILL_MISSING!==1 (
+        echo =====================================================
+        echo   Some tools were installed but not yet in PATH.
+        echo   Close this terminal, open a NEW terminal, and
+        echo   run setup_windows.bat again.
+        echo =====================================================
+        pause
+        exit /b 1
+    )
+)
+
+:: Check for hard failures (no winget + missing tools)
+if defined MISSING_CRITICAL (
     echo =====================================================
-    echo   ERROR: Missing required dependencies!
-    echo   Please install the missing components above.
+    echo   ERROR: Missing required dependencies.
+    echo   Install the components marked [X] above, then
+    echo   run this script again.
     echo =====================================================
     pause
     exit /b 1
+)
+
+if !NEED_RESTART!==1 (
+    echo =====================================================
+    echo   VS Build Tools were just installed.
+    echo   Please close this terminal, open:
+    echo     "x64 Native Tools Command Prompt for VS 2022"
+    echo   and run setup_windows.bat again.
+    echo =====================================================
+    pause
+    exit /b 0
 )
 
 if defined MISSING_VS (
