@@ -508,7 +508,9 @@ if exist "llama-cpp\llama-server.exe" (
     echo Detecting best llama.cpp Windows bundle...
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
       "$ErrorActionPreference='Stop';" ^
+      "$tag='%LLAMA_CPP_RELEASE_TAG%';" ^
       "$api='https://api.github.com/repos/ggml-org/llama.cpp/releases/latest';" ^
+      "if (-not [string]::IsNullOrWhiteSpace($tag)) { $api='https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/' + $tag };" ^
       "$rel=Invoke-RestMethod -Uri $api -Headers @{ 'User-Agent'='ParleyAI-Setup' };" ^
       "$gpuName=''; $allGpus=@(); try { $allGpus=(Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name) } catch {};" ^
       "if ($allGpus) { $pick=$allGpus | Where-Object { $_ -match 'NVIDIA|GeForce|RTX|Quadro' } | Select-Object -First 1; if (-not $pick) { $pick=$allGpus | Select-Object -First 1 }; if ($pick) { $gpuName=$pick.ToLowerInvariant() } };" ^
@@ -522,9 +524,9 @@ if exist "llama-cpp\llama-server.exe" (
       "$preferred=@();" ^
       "if (-not $isX64) { throw 'Unsupported CPU architecture for this script: expected x64 Windows' };" ^
       "if ($isNvidia) {" ^
-      "  if ($cudaMajor -eq '13') { $preferred = @('cudart-llama-bin-win-cuda-13.1-x64.zip','cudart-llama-bin-win-cuda-12.4-x64.zip') }" ^
-      "  elseif ($cudaMajor -eq '12') { $preferred = @('cudart-llama-bin-win-cuda-12.4-x64.zip','cudart-llama-bin-win-cuda-13.1-x64.zip') }" ^
-      "  else { $preferred = @('cudart-llama-bin-win-cuda-12.4-x64.zip','cudart-llama-bin-win-cuda-13.1-x64.zip','llama-b*-bin-win-vulkan-x64.zip','llama-b*-bin-win-cpu-x64.zip') }" ^
+      "  if ($cudaMajor -eq '13') { $preferred = @('llama-b*-bin-win-cuda-13.1-x64.zip','llama-b*-bin-win-cuda-12.4-x64.zip','cudart-llama-bin-win-cuda-13.1-x64.zip','cudart-llama-bin-win-cuda-12.4-x64.zip') }" ^
+      "  elseif ($cudaMajor -eq '12') { $preferred = @('llama-b*-bin-win-cuda-12.4-x64.zip','llama-b*-bin-win-cuda-13.1-x64.zip','cudart-llama-bin-win-cuda-12.4-x64.zip','cudart-llama-bin-win-cuda-13.1-x64.zip') }" ^
+      "  else { $preferred = @('llama-b*-bin-win-cuda-12.4-x64.zip','llama-b*-bin-win-cuda-13.1-x64.zip','cudart-llama-bin-win-cuda-12.4-x64.zip','cudart-llama-bin-win-cuda-13.1-x64.zip','llama-b*-bin-win-vulkan-x64.zip','llama-b*-bin-win-cpu-x64.zip') }" ^
       "} elseif ($isAmd -or $isIntel) {" ^
       "  $preferred = @('llama-b*-bin-win-vulkan-x64.zip','llama-b*-bin-win-cpu-x64.zip')" ^
       "} else {" ^
@@ -536,6 +538,7 @@ if exist "llama-cpp\llama-server.exe" (
       "  else { $asset = $rel.assets | Where-Object { $_.name -eq $name } | Select-Object -First 1 }" ^
       "  if ($asset) { break }" ^
       "};" ^
+      "if (-not $asset) { $asset=$rel.assets | Where-Object { $_.name -match '^llama-b[0-9]+-bin-win-cuda-(12\.4|13\.1)-x64\.zip$' } | Select-Object -First 1 };" ^
       "if (-not $asset) { $asset=$rel.assets | Where-Object { $_.name -match '^cudart-llama-bin-win-cuda-.*-x64\.zip$' } | Select-Object -First 1 };" ^
       "if (-not $asset) { $asset=$rel.assets | Where-Object { $_.name -match '^llama-b[0-9]+-bin-win-(cpu|vulkan|sycl|hip)-x64\.(zip|tar\.gz)$' } | Select-Object -First 1 };" ^
       "if (-not $asset) { throw 'No supported Windows binary asset found for llama.cpp release' };" ^
@@ -551,6 +554,7 @@ if exist "llama-cpp\llama-server.exe" (
       "Write-Host ('CUDA major: ' + $cudaShown);" ^
       "Write-Host ('Preferred candidates: ' + ($preferred -join ', '));" ^
       "Write-Host ('Selected asset: ' + $asset.name);" ^
+      "if (-not [string]::IsNullOrWhiteSpace($tag)) { Write-Host ('Release tag override: ' + $tag) } else { Write-Host 'Release tag override: latest' };" ^
       "Write-Host ('Archive path: ' + $archivePath);" ^
       "Write-Host ('Install dir: ' + $targetDir);" ^
       "$expectedSize = [int64]$asset.size;" ^
