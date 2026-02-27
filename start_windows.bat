@@ -1,5 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
+set "SCRIPT_DIR=%~dp0"
+cd /d "%SCRIPT_DIR%"
 
 if "%1"=="--help" goto show_help
 if "%1"=="-h" goto show_help
@@ -111,8 +113,10 @@ if "%LOCAL_IP%"=="" set LOCAL_IP=?.?.?.?
 
 :: Start backend server
 echo Starting backend server...
+if not exist "backend\logs" mkdir "backend\logs"
+set "BACKEND_LOG=%CD%\backend\logs\windows_backend_runtime.log"
 cd backend
-start "ParleyAI Backend" cmd /c "call venv\Scripts\activate.bat && python -m uvicorn server:app --host 127.0.0.1 --port 8000"
+start "ParleyAI Backend" cmd /c "call venv\Scripts\activate.bat && python -u -m uvicorn server:app --host 127.0.0.1 --port 8000 >> \"%BACKEND_LOG%\" 2>&1"
 cd ..
 
 :: Wait for backend to be ready
@@ -156,8 +160,9 @@ echo set ANTHROPIC_MODEL=parleyai>> .claude_env.bat
 
 :: Start frontend
 echo Starting frontend...
+set "FRONTEND_LOG=%CD%\frontend\windows_frontend_runtime.log"
 cd frontend
-start "ParleyAI Frontend" cmd /c "npm run dev"
+start "ParleyAI Frontend" cmd /c "npm run dev >> \"%FRONTEND_LOG%\" 2>&1"
 cd ..
 
 :: Start tunnel if requested
@@ -233,6 +238,14 @@ echo     See .tunnel.log for the public URL
 echo.
 echo   Claude Code CLI (in another terminal):
 echo     .claude_env.bat ^&^& claude
+echo.
+echo   Runtime logs:
+echo     Backend:  %BACKEND_LOG%
+echo     Frontend: %FRONTEND_LOG%
+echo.
+echo   Tail logs live:
+echo     PowerShell: Get-Content "%BACKEND_LOG%" -Wait
+echo     CMD:        powershell -NoProfile -Command "Get-Content '%BACKEND_LOG%' -Wait"
 echo.
 echo   Press Ctrl+C in each window to stop.
 echo.
