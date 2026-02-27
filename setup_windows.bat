@@ -553,13 +553,27 @@ if exist "llama-cpp\llama-server.exe" (
       "Write-Host ('Selected asset: ' + $asset.name);" ^
       "Write-Host ('Archive path: ' + $archivePath);" ^
       "Write-Host ('Install dir: ' + $targetDir);" ^
-      "if (Test-Path $archivePath) { Remove-Item $archivePath -Force };" ^
+      "$expectedSize = [int64]$asset.size;" ^
+      "Write-Host ('Expected size: ' + $expectedSize + ' bytes');" ^
+      "$needDownload = $true;" ^
+      "if (Test-Path $archivePath) {" ^
+      "  try { $existingSize=(Get-Item $archivePath).Length } catch { $existingSize=0 };" ^
+      "  if ($existingSize -eq $expectedSize -and $existingSize -gt 0) {" ^
+      "    $needDownload=$false;" ^
+      "    Write-Host ('Using existing archive (name+size match): ' + $archivePath + ' (' + $existingSize + ' bytes)')" ^
+      "  } else {" ^
+      "    Write-Host ('Archive mismatch, re-downloading. Existing=' + $existingSize + ' bytes, Expected=' + $expectedSize + ' bytes')" ^
+      "  }" ^
+      "};" ^
       "if (Test-Path $extractTmp) { Remove-Item $extractTmp -Recurse -Force };" ^
       "if (Test-Path $targetDir) { Remove-Item $targetDir -Recurse -Force };" ^
       "New-Item -ItemType Directory -Path $targetDir -Force | Out-Null;" ^
-      "Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archivePath -UseBasicParsing;" ^
+      "if ($needDownload) { Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archivePath -UseBasicParsing };" ^
       "if ($asset.name -like '*.zip') {" ^
-      "  Expand-Archive -Path $archivePath -DestinationPath $extractTmp -Force" ^
+      "  $ok=$false;" ^
+      "  try { Expand-Archive -Path $archivePath -DestinationPath $extractTmp -Force; $ok=$true } catch { Write-Host ('Expand-Archive failed: ' + $_.Exception.Message) };" ^
+      "  if (-not $ok) { try { New-Item -ItemType Directory -Path $extractTmp -Force | Out-Null; tar -xf $archivePath -C $extractTmp; $ok=$true } catch { Write-Host ('tar extract failed: ' + $_.Exception.Message) } };" ^
+      "  if (-not $ok) { throw ('Failed to extract zip archive: ' + $archivePath) }" ^
       "} elseif ($asset.name -like '*.tar.gz' -or $asset.name -like '*.tgz') {" ^
       "  New-Item -ItemType Directory -Path $extractTmp -Force | Out-Null; tar -xzf $archivePath -C $extractTmp" ^
       "} elseif ($asset.name -like '*.exe') {" ^
