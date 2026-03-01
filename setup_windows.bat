@@ -496,10 +496,10 @@ if %ERRORLEVEL%==0 (
     )
 )
 
-:: llama-server (required for LFM2 model family)
+:: llama-server (required for LFM2, Qwen, Mistral, and custom model families)
 echo.
 echo ========================================
-echo   Setting up llama-server (LFM2)
+echo   Setting up llama-server
 echo ========================================
 if not exist "llama-cpp" mkdir "llama-cpp"
 if exist "llama-cpp\llama-server.exe" (

@@ -19,10 +19,12 @@ echo.
 echo Environment variables:
 echo.
 echo   Model
-echo     MODEL_FAMILY    llama_70b or lfm2_24b           (default: llama_70b)
+echo     MODEL_FAMILY    Model family to use               (default: llama_70b)
+echo                     Options: llama_70b, lfm2_24b, qwen_32b, mistral_24b, custom
 echo     QUANT           Quantization level               (default: Q4_K_M)
 echo     CTX             Context window in tokens          (default: 2048)
 echo     MODEL_PATH      Path to GGUF file or directory    (default: auto-download)
+echo                     Required when MODEL_FAMILY=custom
 echo.
 echo   Hardware
 echo     GPU_LAYERS      Layers offloaded to GPU           (default: -1, all)
@@ -33,7 +35,7 @@ echo     TUNNEL          on/off - expose via tunnel         (default: off)
 echo     TUNNEL_TOOL     auto, cloudflared, or localtunnel  (default: auto)
 echo     SUBDOMAIN       Custom subdomain for localtunnel   (e.g. parley-ai)
 echo.
-echo   LFM2 specific
+echo   Server-based models (lfm2, qwen, mistral, custom)
 echo     LFM_IDLE_TIMEOUT  Seconds before llama-server auto-stops  (default: 300)
 echo.
 echo Examples:
@@ -41,6 +43,23 @@ echo.
 echo   :: LFM2-24B on 32GB machine
 echo   set MODEL_FAMILY=lfm2_24b
 echo   set QUANT=Q4_K_M
+echo   .\start_windows.bat
+echo.
+echo   :: Qwen2.5-32B - strong creative writing / JSON
+echo   set MODEL_FAMILY=qwen_32b
+echo   set QUANT=Q5_K_M
+echo   set CTX=8192
+echo   .\start_windows.bat
+echo.
+echo   :: Mistral Small 3.1 24B
+echo   set MODEL_FAMILY=mistral_24b
+echo   set QUANT=Q6_K
+echo   .\start_windows.bat
+echo.
+echo   :: Any GGUF model (chat template auto-detected by llama-server)
+echo   set MODEL_FAMILY=custom
+echo   set MODEL_PATH=C:\models\my-model.gguf
+echo   set CTX=4096
 echo   .\start_windows.bat
 echo.
 echo   :: Expose to the internet
@@ -91,19 +110,27 @@ if defined MODEL_PATH echo   Model Path:   %MODEL_PATH%
 if defined LLAMA_SERVER_PATH echo   Llama Server: %LLAMA_SERVER_PATH%
 echo.
 
-if /i "%MODEL_FAMILY%"=="lfm2_24b" (
+:: Server-based model families require llama-server
+set "_NEEDS_SERVER=0"
+if /i "%MODEL_FAMILY%"=="lfm2_24b" set "_NEEDS_SERVER=1"
+if /i "%MODEL_FAMILY%"=="qwen_32b" set "_NEEDS_SERVER=1"
+if /i "%MODEL_FAMILY%"=="mistral_24b" set "_NEEDS_SERVER=1"
+if /i "%MODEL_FAMILY%"=="custom" set "_NEEDS_SERVER=1"
+if "%_NEEDS_SERVER%"=="1" (
     where llama-server >nul 2>&1
     if !ERRORLEVEL! neq 0 (
         if not defined LLAMA_SERVER_PATH (
             echo [WARN] llama-server not found on PATH.
-            echo       For LFM2 on Windows, place llama-server.exe at:
+            echo       For %MODEL_FAMILY% on Windows, place llama-server.exe at:
             echo         .\llama-cpp\llama-server.exe
             echo       OR set:
             echo         set LLAMA_SERVER_PATH=C:\path\to\llama-server.exe
+            echo       Run setup_windows.bat to auto-download it.
             echo.
         )
     )
 )
+set "_NEEDS_SERVER="
 
 :: Check if backend venv exists
 if not exist "backend\venv\Scripts\activate.bat" (

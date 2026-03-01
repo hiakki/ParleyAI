@@ -13,10 +13,12 @@ Usage:
 Environment variables:
 
   Model
-    MODEL_FAMILY    llama_70b or lfm2_24b           (default: llama_70b)
+    MODEL_FAMILY    Model family to use               (default: llama_70b)
+                    Options: llama_70b, lfm2_24b, qwen_32b, mistral_24b, custom
     QUANT           Quantization level               (default: Q4_K_M)
     CTX             Context window in tokens          (default: 2048)
     MODEL_PATH      Path to GGUF file or directory    (default: auto-download)
+                    Required when MODEL_FAMILY=custom
 
   Hardware
     GPU_LAYERS      Layers offloaded to GPU           (default: 99)
@@ -28,7 +30,7 @@ Environment variables:
     TUNNEL_TOOL     auto, cloudflared, or localtunnel  (default: auto)
     SUBDOMAIN       Custom subdomain for localtunnel   (e.g. parley-ai → parley-ai.loca.lt)
 
-  LFM2 specific
+  Server-based models (lfm2, qwen, mistral, custom)
     LFM_IDLE_TIMEOUT  Seconds before llama-server auto-stops  (default: 300)
 
 Examples:
@@ -37,6 +39,15 @@ Examples:
 
   # LFM2-24B on 32GB machine
   MODEL_FAMILY=lfm2_24b QUANT=Q4_K_M ./start.sh
+
+  # Qwen2.5-32B — strong creative writing / JSON
+  MODEL_FAMILY=qwen_32b QUANT=Q5_K_M CTX=8192 ./start.sh
+
+  # Mistral Small 3.1 24B
+  MODEL_FAMILY=mistral_24b QUANT=Q6_K ./start.sh
+
+  # Any GGUF model (chat template auto-detected by llama-server)
+  MODEL_FAMILY=custom MODEL_PATH=~/models/my-model.gguf CTX=4096 ./start.sh
 
   # Expose to the internet via Cloudflare
   TUNNEL=on ./start.sh
@@ -65,7 +76,7 @@ echo "=================================="
 echo ""
 
 # Configuration
-export MODEL_FAMILY="${MODEL_FAMILY:-llama_70b}"   # llama_70b or lfm2_24b (30–35GB RAM)
+export MODEL_FAMILY="${MODEL_FAMILY:-llama_70b}"   # llama_70b, lfm2_24b, qwen_32b, mistral_24b, or custom
 export QUANT="${QUANT:-Q4_K_M}"
 export CTX="${CTX:-2048}"
 export GPU_LAYERS="${GPU_LAYERS:-99}"

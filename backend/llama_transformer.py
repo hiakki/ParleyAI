@@ -349,6 +349,103 @@ MODEL_FAMILIES = {
             },
         },
     },
+    # Qwen2.5-32B-Instruct: strong creative writing, excellent JSON, good for 32GB RAM.
+    # https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF
+    "qwen_32b": {
+        "name": "Qwen2.5-32B-Instruct",
+        "chat_template": "chatml",
+        "use_server": True,
+        "quants": {
+            "Q3_K_M": {
+                "size_gb": 16,
+                "quality": "Medium quality, fits tight RAM",
+                "recommended_ram": "20GB+",
+                "repo": "Qwen/Qwen2.5-32B-Instruct-GGUF",
+                "filename": "qwen2.5-32b-instruct-q3_k_m.gguf"
+            },
+            "Q4_K_M": {
+                "size_gb": 20,
+                "quality": "Very good quality, recommended for 32GB RAM",
+                "recommended_ram": "24GB+",
+                "repo": "Qwen/Qwen2.5-32B-Instruct-GGUF",
+                "filename": "qwen2.5-32b-instruct-q4_k_m.gguf"
+            },
+            "Q5_K_M": {
+                "size_gb": 23,
+                "quality": "High quality, best balance for 32GB",
+                "recommended_ram": "28GB+",
+                "repo": "Qwen/Qwen2.5-32B-Instruct-GGUF",
+                "filename": "qwen2.5-32b-instruct-q5_k_m.gguf"
+            },
+            "Q6_K": {
+                "size_gb": 27,
+                "quality": "Very high quality",
+                "recommended_ram": "32GB+",
+                "repo": "Qwen/Qwen2.5-32B-Instruct-GGUF",
+                "filename": "qwen2.5-32b-instruct-q6_k.gguf"
+            },
+            "Q8_0": {
+                "size_gb": 34,
+                "quality": "Near-original quality",
+                "recommended_ram": "40GB+",
+                "repo": "Qwen/Qwen2.5-32B-Instruct-GGUF",
+                "filename": "qwen2.5-32b-instruct-q8_0.gguf"
+            },
+        },
+    },
+    # Mistral Small 3.1 24B: fast, strong instruction following, good creative writing.
+    # https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF
+    "mistral_24b": {
+        "name": "Mistral-Small-3.1-24B-Instruct",
+        "chat_template": "mistral",
+        "use_server": True,
+        "quants": {
+            "Q4_K_M": {
+                "size_gb": 14,
+                "quality": "Very good quality, recommended for 32GB RAM",
+                "recommended_ram": "20GB+",
+                "repo": "bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF",
+                "filename": "mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q4_K_M.gguf"
+            },
+            "Q5_K_M": {
+                "size_gb": 17,
+                "quality": "High quality",
+                "recommended_ram": "24GB+",
+                "repo": "bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF",
+                "filename": "mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q5_K_M.gguf"
+            },
+            "Q6_K": {
+                "size_gb": 20,
+                "quality": "Very high quality",
+                "recommended_ram": "28GB+",
+                "repo": "bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF",
+                "filename": "mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q6_K.gguf"
+            },
+            "Q8_0": {
+                "size_gb": 25,
+                "quality": "Near-original quality",
+                "recommended_ram": "32GB+",
+                "repo": "bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF",
+                "filename": "mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q8_0.gguf"
+            },
+        },
+    },
+    # Custom: use any GGUF model via MODEL_PATH. Requires llama-server.
+    # Chat template is auto-detected from the GGUF file by llama-server.
+    "custom": {
+        "name": "Custom GGUF Model",
+        "chat_template": "chatml",
+        "use_server": True,
+        "quants": {
+            "custom": {
+                "size_gb": 0,
+                "quality": "User-provided model",
+                "recommended_ram": "varies",
+                "repo": "",
+                "filename": ""
+            },
+        },
+    },
 }
 
 
@@ -1157,34 +1254,51 @@ def get_transformer(
 
     Uses LlamaTransformer (in-process llama-cpp-python) for llama_70b,
     and LlamaServerTransformer (external llama-server subprocess) for
-    families whose architecture isn't yet in the PyPI llama-cpp-python
-    (e.g. lfm2_24b / lfm2moe).
+    server-based families (lfm2_24b, qwen_32b, mistral_24b, custom).
+
+    For model_family="custom", MODEL_PATH is required.
     """
     global _transformer_instance
 
     if _transformer_instance is not None:
         return _transformer_instance
 
-    family_info = MODEL_FAMILIES.get(model_family, {})
+    if model_family not in MODEL_FAMILIES:
+        raise ValueError(
+            f"Unknown model_family: {model_family}. "
+            f"Options: {list(MODEL_FAMILIES.keys())}"
+        )
+
+    family_info = MODEL_FAMILIES[model_family]
     use_server = family_info.get("use_server", False)
 
     if use_server:
-        quant_info = family_info["quants"].get(quantization)
-        if quant_info is None:
-            raise ValueError(
-                f"Unknown quantization for {model_family}: {quantization}. "
-                f"Options: {list(family_info['quants'].keys())}"
-            )
-        if model_path is None:
-            local_dir = Path.home() / "llama-models"
-            local_path = local_dir / quant_info["filename"]
-            if local_path.exists():
-                model_path = str(local_path)
-            else:
-                model_path = hf_hub_download(
-                    repo_id=quant_info["repo"],
-                    filename=quant_info["filename"],
+        is_custom = model_family == "custom"
+
+        if is_custom:
+            if model_path is None:
+                raise ValueError(
+                    "MODEL_PATH is required for model_family=custom. "
+                    "Set it to the full path of your .gguf file."
                 )
+            quantization = "custom"
+        else:
+            quant_info = family_info["quants"].get(quantization)
+            if quant_info is None:
+                raise ValueError(
+                    f"Unknown quantization for {model_family}: {quantization}. "
+                    f"Options: {list(family_info['quants'].keys())}"
+                )
+            if model_path is None:
+                local_dir = Path.home() / "llama-models"
+                local_path = local_dir / quant_info["filename"]
+                if local_path.exists():
+                    model_path = str(local_path)
+                else:
+                    model_path = hf_hub_download(
+                        repo_id=quant_info["repo"],
+                        filename=quant_info["filename"],
+                    )
         _transformer_instance = LlamaServerTransformer(
             model_path=model_path,
             model_family=model_family,
@@ -1215,13 +1329,13 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(
-        description="ParleyAI — run Llama 3.3 70B or LFM2-24B locally (GGUF)"
+        description="ParleyAI — run local LLMs via GGUF (Llama, LFM2, Qwen, Mistral, or any custom GGUF)"
     )
     parser.add_argument(
         "--model-family", "-f",
         default="llama_70b",
         choices=list(MODEL_FAMILIES.keys()),
-        help="Model family: llama_70b or lfm2_24b (default: llama_70b)"
+        help="Model family (default: llama_70b). Use 'custom' with --model-path for any GGUF."
     )
     parser.add_argument(
         "--quant", "-q",

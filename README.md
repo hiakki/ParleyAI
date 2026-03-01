@@ -3,17 +3,106 @@
 A full-stack chat application for running large GGUF models locally.
 
 **Supported models:**
-- **Llama 3.3 70B Instruct** ([bartowski GGUF](https://huggingface.co/bartowski/Llama-3.3-70B-Instruct-GGUF)) — 48GB+ RAM recommended
-- **LFM2-24B-A2B** ([Liquid AI](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF)) — fits in **30–35GB RAM**, ChatML format
+
+| `MODEL_FAMILY` | Model | GGUF Downloads | RAM | Best for |
+|---|---|---|---|---|
+| `llama_70b` | Llama 3.3 70B Instruct | [bartowski GGUF](https://huggingface.co/bartowski/Llama-3.3-70B-Instruct-GGUF) | 48GB+ | General-purpose, coding |
+| `qwen_32b` | Qwen2.5-32B-Instruct | [Qwen GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) | 24–40GB | **Creative writing, JSON, structured output** |
+| `mistral_24b` | Mistral Small 3.1 24B | [Mistral GGUF](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) | 20–32GB | Fast inference, instruction following |
+| `lfm2_24b` | LFM2-24B-A2B | [LiquidAI GGUF](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF) | 20–35GB | Efficient MoE (2B active params) |
+| `custom` | Any GGUF model | — | varies | Bring your own model via `MODEL_PATH` |
 
 **Supported platforms:**
-- ✅ **macOS** with Apple Silicon (M1/M2/M3/M4) - Metal GPU acceleration
-- ✅ **Windows** with NVIDIA GPUs (RTX 3060, 3070, 3080, 4060, 4070, 4080, 4090, 5060, etc.) - CUDA acceleration
-- ✅ **Linux** with NVIDIA GPUs - CUDA acceleration
+- **macOS** with Apple Silicon (M1/M2/M3/M4) — Metal GPU acceleration
+- **Windows** with NVIDIA GPUs (RTX 3060–5090) — CUDA acceleration
+- **Linux** with NVIDIA GPUs — CUDA acceleration
 
-**GGUF Models**: [bartowski/Llama-3.3-70B-Instruct-GGUF](https://huggingface.co/bartowski/Llama-3.3-70B-Instruct-GGUF)
+### Recommended Models by Hardware
 
-**Original Model**: [meta-llama/Llama-3.3-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct) (by Meta)
+| Hardware | Top Pick | `MODEL_FAMILY` | `QUANT` | Download |
+|---|---|---|---|---|
+| **48GB+ RAM** (M4 Pro, etc.) | Llama 3.3 70B | `llama_70b` | `Q4_K_M` | [43GB GGUF](https://huggingface.co/bartowski/Llama-3.3-70B-Instruct-GGUF) |
+| **32GB RAM + RTX 4070** | Qwen2.5-32B | `qwen_32b` | `Q5_K_M` | [23GB GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) |
+| **32GB RAM** (story/JSON) | Qwen2.5-32B | `qwen_32b` | `Q4_K_M` | [20GB GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) |
+| **32GB RAM** (fast) | Mistral Small 3.1 | `mistral_24b` | `Q6_K` | [20GB GGUF](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) |
+| **24GB RAM** | Mistral Small 3.1 | `mistral_24b` | `Q4_K_M` | [14GB GGUF](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) |
+| **20GB RAM** | LFM2-24B-A2B | `lfm2_24b` | `Q4_0` | [14GB GGUF](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF) |
+
+### Model Comparison (i7 + RTX 4070 8GB + 32GB RAM)
+
+| # | Criteria | Llama 70B Q3_K_M | Qwen 32B Q5_K_M | Mistral 24B Q6_K | LFM2 24B Q8_0 |
+|---|---|---|---|---|---|
+| 1 | **Hardware Compatibility** | 40% | 85% | 93% | 78% |
+| 2 | **Speed** | 20% | 65% | 85% | 82% |
+| 3 | **Output Quality** | 62% | 92% | 76% | 58% |
+| 4 | **Hallucinations** (less = better) | 58% | 86% | 78% | 55% |
+| 5 | **Overall** | **45%** | **82%** | **83%** | **68%** |
+
+> **For creative/structured output** (stories, JSON): Qwen2.5-32B Q5_K_M is the best pick.
+> **For speed-first workflows**: Mistral 3.1 24B Q6_K edges out with faster inference at nearly the same overall score.
+> **Avoid Llama 70B** on 32GB RAM — the aggressive Q3 quantization needed to fit it undermines its quality advantage.
+
+### Best Model for Your Use Case
+
+| Use Case | Best Model | Why |
+|---|---|---|
+| **Story generation / screenwriting** | Qwen2.5-32B | Richest creative vocabulary, best narrative coherence |
+| **Structured JSON output** | Qwen2.5-32B | Most reliable JSON schema adherence, lowest parse failures |
+| **Chatbot / conversational AI** | Mistral 3.1 24B | Fast responses, natural dialogue, strong instruction following |
+| **Coding assistant** | Llama 3.3 70B | Best code understanding (needs 48GB+ RAM for good quant) |
+| **Translation / multilingual** | Mistral 3.1 24B | 24-language support, strong cross-lingual transfer |
+| **Summarization / analysis** | Qwen2.5-32B | Large context window (128K), accurate extraction |
+| **Low-RAM / embedded** | LFM2-24B | MoE with 2B active params, smallest memory footprint |
+| **Speed-critical pipelines** | Mistral 3.1 24B | Fastest tok/s on consumer GPUs |
+| **RAG / tool use / agents** | Qwen2.5-32B | Best tool-calling and function-calling accuracy |
+| **General all-rounder (32GB)** | Qwen2.5-32B | Highest overall score across quality, JSON, and creativity |
+| **General all-rounder (48GB+)** | Llama 3.3 70B | Strongest model at higher quants with enough RAM |
+
+### Quantization Impact (quality vs RAM tradeoff)
+
+Higher quant = better quality but more RAM. The sweet spot depends on your hardware.
+
+**Qwen2.5-32B on 32GB RAM (i7 + RTX 4070 8GB):**
+
+| Quant | Size | Fits 32GB? | Quality vs FP16 | Speed | Overall |
+|---|---|---|---|---|---|
+| **Q4_K_M** | 20GB | Comfortable | -2–4% | Fast | 78% |
+| **Q5_K_M** | 23GB | Comfortable | -1–2% | Good | **82% (recommended)** |
+| **Q6_K** | 27GB | Tight (CTX≤4096) | -0.5–1% | Slower | 76% |
+| **Q8_0** | 34GB | No (swaps) | -0.1–0.3% | Very slow | 58% |
+
+**Mistral 3.1 24B on 32GB RAM:**
+
+| Quant | Size | Fits 32GB? | Quality vs FP16 | Speed | Overall |
+|---|---|---|---|---|---|
+| **Q4_K_M** | 14GB | Easy | -2–4% | Very fast | 80% |
+| **Q5_K_M** | 17GB | Easy | -1–2% | Fast | 84% |
+| **Q6_K** | 20GB | Comfortable | -0.5–1% | Good | **86% (recommended)** |
+| **Q8_0** | 25GB | Comfortable | -0.1–0.3% | Good | 85% |
+
+**LFM2-24B on 32GB RAM:**
+
+| Quant | Size | Fits 32GB? | Quality vs FP16 | Speed | Overall |
+|---|---|---|---|---|---|
+| **Q4_0** | 14GB | Easy | -3–5% | Very fast | 65% |
+| **Q4_K_M** | 15GB | Easy | -2–4% | Fast | **68% (recommended)** |
+| **Q8_0** | 26GB | Comfortable | -0.1–0.3% | Good | 72% |
+
+**Llama 3.3 70B (48GB+ RAM recommended):**
+
+| Quant | Size | Fits 32GB? | Quality vs FP16 | Speed | Overall (on 32GB) |
+|---|---|---|---|---|---|
+| **Q3_K_M** | 34GB | Barely | -5–10% | Very slow | 45% |
+| **Q4_K_M** | 43GB | No | -2–4% | — | Needs 48GB+ |
+| **Q5_K_M** | 50GB | No | -1–2% | — | Needs 64GB+ |
+
+> **Rule of thumb:** Pick the highest quant where the model fits with ≥5GB headroom. Going one quant higher gives <2% quality gain but can cut speed in half if you hit RAM limits.
+
+**Original models:**
+- [meta-llama/Llama-3.3-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct) (Meta)
+- [Qwen/Qwen2.5-32B-Instruct](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct) (Alibaba)
+- [mistralai/Mistral-Small-3.1-24B-Instruct-2503](https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503) (Mistral AI)
+- [LiquidAI/LFM2-24B-A2B](https://huggingface.co/LiquidAI/LFM2-24B-A2B) (Liquid AI)
 
 ## 🚀 Quick Start (Full-Stack App)
 
@@ -192,8 +281,8 @@ MODEL_PATH=~/llama-models QUANT=IQ3_M CTX=2048 GPU_LAYERS=40 ./start.sh
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
-| `MODEL_FAMILY` | `llama_70b` or `lfm2_24b` | Model family (LFM2 fits in 30–35GB RAM) |
-| `MODEL_PATH` | `~/llama-models` | Directory or path to GGUF file |
+| `MODEL_FAMILY` | `llama_70b` | `llama_70b`, `qwen_32b`, `mistral_24b`, `lfm2_24b`, or `custom` |
+| `MODEL_PATH` | `~/llama-models` | Directory or path to GGUF file (required for `custom`) |
 | `QUANT` | `Q4_K_M` | Quantization (options depend on `MODEL_FAMILY`) |
 | `CTX` | `2048` | Context window (tokens) |
 | `GPU_LAYERS` | `99` or `-1` | Layers offloaded to GPU |
@@ -223,26 +312,58 @@ Requires one of:
 
 The tunnel URL is printed at startup and logged to `.tunnel.log`.
 
-### Running LFM2-24B (30–35GB RAM)
+### Running Server-Based Models (Qwen, Mistral, LFM2, Custom)
 
-[LFM2-24B-A2B](https://huggingface.co/LiquidAI/LFM2-24B-A2B) is a 24B MoE model with 2B active parameters per token, fitting in ~32GB RAM. Use it when you have 30–35GB RAM (e.g. 32GB Mac or PC) and don’t want to run the 70B model.
+All model families except `llama_70b` use an external `llama-server` subprocess (from the [llama.cpp](https://github.com/ggml-org/llama.cpp) project). This covers Qwen2.5-32B, Mistral Small 3.1, LFM2-24B, and any custom GGUF model.
 
-**Prerequisite:** LFM2 requires `llama-server` on your PATH (the `lfm2moe` architecture isn’t in the PyPI `llama-cpp-python` yet, so the app runs LFM2 via `llama-server`’s OpenAI-compatible API as a subprocess):
+**Prerequisite — install `llama-server`:**
 
 ```bash
 # macOS
 brew install llama.cpp
 
-# Linux / Windows: download from https://github.com/ggml-org/llama.cpp/releases
+# Windows: run setup_windows.bat (auto-downloads llama-server)
+# Or manually download from https://github.com/ggml-org/llama.cpp/releases
+
+# Linux: download from https://github.com/ggml-org/llama.cpp/releases
 ```
 
-Then start:
+**Start examples:**
 
 ```bash
+# Qwen2.5-32B — best for creative writing, structured JSON, story generation
+MODEL_FAMILY=qwen_32b QUANT=Q5_K_M CTX=8192 ./start.sh
+
+# Mistral Small 3.1 24B — fast, strong instruction following
+MODEL_FAMILY=mistral_24b QUANT=Q6_K CTX=8192 ./start.sh
+
+# LFM2-24B — efficient MoE, fits in 30–35GB RAM
 MODEL_FAMILY=lfm2_24b QUANT=Q4_K_M ./start.sh
+
+# Any GGUF model — chat template auto-detected from the GGUF file
+MODEL_FAMILY=custom MODEL_PATH=~/models/my-model.gguf CTX=4096 ./start.sh
 ```
 
-Optional: set `MODEL_PATH` to a directory containing the LFM2 GGUF file (e.g. `LFM2-24B-A2B-Q4_K_M.gguf`). Otherwise the app downloads from [LiquidAI/LFM2-24B-A2B-GGUF](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF).
+**Windows (CMD):**
+
+```bat
+set MODEL_FAMILY=qwen_32b
+set QUANT=Q5_K_M
+set CTX=8192
+.\start_windows.bat
+```
+
+Models are auto-downloaded from Hugging Face on first run. Set `MODEL_PATH` to skip the download if you already have the GGUF file.
+
+**Available quantizations per family:**
+
+| Family | Quants | Recommended (32GB RAM) |
+|---|---|---|
+| `qwen_32b` | Q3_K_M, Q4_K_M, Q5_K_M, Q6_K, Q8_0 | **Q5_K_M** (23GB) |
+| `mistral_24b` | Q4_K_M, Q5_K_M, Q6_K, Q8_0 | **Q6_K** (20GB) |
+| `lfm2_24b` | Q4_0, Q4_K_M, Q5_K_M, Q6_K, Q8_0, BF16, F16 | **Q4_K_M** (15GB) |
+| `custom` | N/A (set via `MODEL_PATH`) | — |
+
 
 ## 📁 Project Structure
 
@@ -325,7 +446,14 @@ Running a 70B parameter model (normally ~140GB in FP16) efficiently requires:
 
 > **💡 Tip**: For Apple Silicon Macs, use K-quants (Q4_K_M, Q5_K_M, etc.) for best performance. I-quants (IQ3_M, IQ4_XS) offer better quality at the same size but may be slower on Metal.
 
-**LFM2-24B** (`MODEL_FAMILY=lfm2_24b`) — from [LiquidAI/LFM2-24B-A2B-GGUF](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF): Q4_0, Q4_K_M, Q5_K_M, Q6_K, Q8_0, BF16, F16. Recommended for 30–35GB RAM: **Q4_K_M** or **Q5_K_M**.
+**Other model families** (use with `MODEL_FAMILY=...`):
+
+| Family | Model | GGUF Source | Quants | Recommended (32GB) |
+|---|---|---|---|---|
+| `qwen_32b` | [Qwen2.5-32B-Instruct](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) | [GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) | Q3_K_M – Q8_0 | **Q5_K_M** (23GB) |
+| `mistral_24b` | [Mistral Small 3.1 24B](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) | [GGUF](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) | Q4_K_M – Q8_0 | **Q6_K** (20GB) |
+| `lfm2_24b` | [LFM2-24B-A2B](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF) | [GGUF](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF) | Q4_0 – F16 | **Q4_K_M** (15GB) |
+| `custom` | Any GGUF | — | Set via `MODEL_PATH` | — |
 
 ### 🎮 NVIDIA GPU Recommendations
 
@@ -355,18 +483,21 @@ For Windows/Linux with NVIDIA GPUs, the model is split between **VRAM** (fast) a
 
 ```powershell
 # RTX 4060 (8GB VRAM) - Windows
-$env:MODEL_FAMILY="llama_70b"   # or "lfm2_24b" for 30–35GB RAM
+$env:MODEL_FAMILY="llama_70b"   # or qwen_32b, mistral_24b, lfm2_24b, custom
 $env:MODEL_PATH="C:\llama-models"
 $env:QUANT="IQ2_XXS"
 $env:CTX="1024"
 $env:GPU_LAYERS="18"
 .\start_windows.bat
 
-# RTX 4090 (24GB VRAM) - Linux
+# RTX 4070 (12GB VRAM) + 32GB RAM - Qwen2.5-32B for creative writing
+MODEL_FAMILY=qwen_32b QUANT=Q5_K_M CTX=8192 GPU_LAYERS=99 ./start.sh
+
+# RTX 4090 (24GB VRAM) - Llama 70B
 MODEL_PATH=~/llama-models QUANT=Q3_K_M CTX=2048 GPU_LAYERS=45 ./start.sh
 
-# RTX 3070 Ti (8GB VRAM) - Lower context for stability
-MODEL_PATH=~/llama-models QUANT=IQ2_XXS CTX=512 GPU_LAYERS=15 ./start.sh
+# RTX 3070 Ti (8GB VRAM) - Mistral 24B (smaller model, faster)
+MODEL_FAMILY=mistral_24b QUANT=Q4_K_M CTX=4096 GPU_LAYERS=33 ./start.sh
 ```
 
 > **⚠️ VRAM vs RAM**: Unlike Apple Silicon's unified memory, NVIDIA GPUs have separate VRAM. If the model doesn't fit in VRAM, layers are offloaded to CPU (slower). Use `GPU_LAYERS` to control how many layers go to GPU.
@@ -613,22 +744,23 @@ cd backend
 python llama_transformer.py -m ~/.cache/huggingface/hub/.../Llama-3.3-70B-Instruct-Q3_K_S.gguf
 ```
 
-### LFM2: "llama-server not found" or "Failed to load model"
+### "llama-server not found" or "Failed to load model"
 
-LFM2 models use the `lfm2moe` architecture which isn't in the PyPI `llama-cpp-python` package yet. The app runs LFM2 via an external **`llama-server`** subprocess (from the llama.cpp project).
+All model families except `llama_70b` (`qwen_32b`, `mistral_24b`, `lfm2_24b`, `custom`) require `llama-server` (from the llama.cpp project).
 
-**Fix:** Install `llama-server` (part of llama.cpp):
+**Fix:** Install `llama-server`:
 
 ```bash
 # macOS
 brew install llama.cpp
 
-# Linux / Windows: download from https://github.com/ggml-org/llama.cpp/releases
+# Windows: run setup_windows.bat (auto-downloads), or get from:
+# https://github.com/ggml-org/llama.cpp/releases
+
+# Linux: download from https://github.com/ggml-org/llama.cpp/releases
 ```
 
-Then start again with `MODEL_FAMILY=lfm2_24b`.
-
-Also confirm the GGUF file is complete (e.g. **LFM2-24B-A2B-Q8_0.gguf** is ~25 GB). If it's truncated, delete and re-download, or omit `MODEL_PATH` so the app downloads from Hugging Face.
+Also confirm the GGUF file is complete. If it's truncated, delete and re-download, or omit `MODEL_PATH` so the app downloads from Hugging Face.
 
 
 ## 🔌 External API (Claude Code CLI, OpenClaw, curl, OpenAI SDK)

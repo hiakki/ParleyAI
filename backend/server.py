@@ -63,9 +63,13 @@ def resolve_model_path(path_env: str | None, quant: str, model_family: str) -> s
     path = os.path.expanduser(path_env)
     
     if os.path.isdir(path):
+        # For custom family or when filename is empty, just find any single GGUF in the dir
         quants = MODEL_FAMILIES.get(model_family, {}).get("quants", {})
         filename = quants.get(quant, {}).get("filename") if quant in quants else None
         if not filename:
+            gguf_matches = sorted(glob.glob(os.path.join(path, "*.gguf")))
+            if len(gguf_matches) == 1:
+                return gguf_matches[0]
             return None
         full_path = os.path.join(path, filename)
         if os.path.exists(full_path):
