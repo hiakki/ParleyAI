@@ -531,16 +531,10 @@ class LlamaTransformer:
         
         # Find or download model
         if model_path is None:
-            # First check for existing model in ~/llama-models (from brew_setup)
-            local_model_dir = Path.home() / "llama-models"
-            local_model_path = local_model_dir / quant_info["filename"]
-            
-            if local_model_path.exists():
-                model_path = str(local_model_path)
-                if verbose:
-                    print(f"✓ Found existing model: {model_path}")
-            else:
-                # Download if not found locally
+            model_path = self._find_local_model(
+                model_family, quantization, quant_info["filename"], verbose
+            )
+            if model_path is None:
                 model_path = self._download_model(quant_info, cache_dir)
         
         if not Path(model_path).exists():
@@ -598,9 +592,48 @@ class LlamaTransformer:
     
     def _download_model(self, quant_info: dict, cache_dir: Optional[str]) -> str:
         """Download the GGUF model from Hugging Face."""
+    @staticmethod
+    def _find_local_model(
+        model_family: str, quant: str, filename: str, verbose: bool = False
+    ) -> Optional[str]:
+        """Search ~/local-llms for a model file.
+        
+        Search order:
+          ~/local-llms/{model_family}/{quant}/{filename}
+          ~/local-llms/{model_family}/{filename}
+          ~/local-llms/{filename}
+        At each level also checks for split GGUF first parts.
+        """
+        base = Path.home() / "local-llms"
+        if not base.exists():
+            return None
+
+        stem = Path(filename).stem
+        search_dirs = [
+            base / model_family / quant,
+            base / model_family,
+            base,
+        ]
+        for d in search_dirs:
+            if not d.is_dir():
+                continue
+            exact = d / filename
+            if exact.exists():
+                if verbose:
+                    print(f"Found model: {exact}")
+                return str(exact)
+            split_parts = sorted(d.glob(f"{stem}-00001-of-*.gguf"))
+            if split_parts:
+                if verbose:
+                    print(f"Found split model: {split_parts[0]}")
+                return str(split_parts[0])
+        return None
+
+    def _download_model(self, quant_info: dict, cache_dir: Optional[str]) -> str:
+        """Download the GGUF model from Hugging Face."""
         if self.verbose:
             print("\n" + "=" * 60)
-            print("📥 DOWNLOADING MODEL - THIS WILL TAKE A WHILE!")
+            print("DOWNLOADING MODEL - THIS WILL TAKE A WHILE!")
             print("=" * 60)
             print(f"File: {quant_info['filename']}")
             print(f"From: {quant_info['repo']}")
@@ -1290,11 +1323,10 @@ def get_transformer(
                     f"Options: {list(family_info['quants'].keys())}"
                 )
             if model_path is None:
-                local_dir = Path.home() / "llama-models"
-                local_path = local_dir / quant_info["filename"]
-                if local_path.exists():
-                    model_path = str(local_path)
-                else:
+                model_path = LlamaTransformer._find_local_model(
+                    model_family, quantization, quant_info["filename"]
+                )
+                if model_path is None:
                     model_path = hf_hub_download(
                         repo_id=quant_info["repo"],
                         filename=quant_info["filename"],

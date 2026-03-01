@@ -42,6 +42,41 @@ A full-stack chat application for running large GGUF models locally.
 > **For speed-first workflows**: Mistral 3.1 24B Q6_K edges out with faster inference at nearly the same overall score.
 > **Avoid Llama 70B** on 32GB RAM — the aggressive Q3 quantization needed to fit it undermines its quality advantage.
 
+### How Do These Compare to Cloud AI?
+
+If you've used ChatGPT, Claude, or Gemini, here's how these local models stack up in output quality:
+
+| Local Model (on your PC) | Closest Cloud Equivalent | Quality Gap | Notes |
+|---|---|---|---|
+| **Llama 70B Q4_K_M** (48GB+) | GPT-4o mini / Claude 3.5 Haiku | ~85–90% of GPT-4o | Best local model, but needs big RAM |
+| **Qwen 32B Q5_K_M** (32GB) | GPT-4o mini / Gemini 1.5 Flash | ~80–85% of GPT-4o | Beats GPT-3.5 on structured output |
+| **Mistral 24B Q6_K** (32GB) | GPT-3.5 Turbo+ | ~75–80% of GPT-4o | Faster than Qwen, slightly less creative |
+| **LFM2 24B Q8_0** (32GB) | GPT-3.5 Turbo | ~65–70% of GPT-4o | Good for simple tasks, efficient |
+
+**For context — cloud model tiers:**
+
+| Tier | Models | Quality | Cost |
+|---|---|---|---|
+| **Frontier** | GPT-4o, Claude 3.5 Sonnet, Gemini 1.5 Pro | 95–98% | $5–$15 / 1M tokens |
+| **Mid-tier** | GPT-4o mini, Claude 3.5 Haiku, Gemini 1.5 Flash | 85–90% | $0.25–$1 / 1M tokens |
+| **Legacy** | GPT-3.5 Turbo | 70–75% | $0.50 / 1M tokens |
+| **Local (free)** | Qwen 32B, Mistral 24B, Llama 70B | 75–90% | **$0 forever** |
+
+**What this means in practice:**
+
+| Task | Cloud model you'd need | Local equivalent | You'll notice a difference? |
+|---|---|---|---|
+| Casual chat | GPT-3.5 Turbo | Mistral 24B | No — equally good |
+| Blog writing | GPT-4o mini | Qwen 32B | Barely — minor phrasing differences |
+| Story generation (NarrateAI) | GPT-4o mini | Qwen 32B | Slight — cloud is ~10–15% more polished |
+| Complex code generation | GPT-4o / Claude 3.5 | Llama 70B (48GB+) | Yes — cloud is noticeably better on hard problems |
+| Simple code / scripts | GPT-3.5 Turbo | Mistral 24B or Qwen 32B | No — local handles these well |
+| JSON / structured data | GPT-4o mini | Qwen 32B | No — Qwen's JSON is excellent |
+| Translation | GPT-4o mini | Mistral 24B | Slight — cloud better on rare language pairs |
+| Summarization | GPT-4o mini | Qwen 32B | Barely — both extract key points well |
+
+> **Bottom line:** For most everyday tasks, Qwen 32B and Mistral 24B running locally are comparable to GPT-4o mini / GPT-3.5 Turbo — at zero cost and full privacy. You only miss out on frontier-level (GPT-4o / Claude 3.5 Sonnet) capabilities for the hardest reasoning and coding tasks.
+
 ### Best Model for Your Use Case
 
 | Use Case | Best Model | Why |
@@ -116,6 +151,15 @@ set GPU_LAYERS=99
 set BATCH_SIZE=512
 .\start_windows.bat
 ```
+```powershell
+# Windows (PowerShell)
+$env:MODEL_FAMILY='qwen_32b'
+$env:QUANT='Q5_K_M'
+$env:CTX='8192'
+$env:GPU_LAYERS='99'
+$env:BATCH_SIZE='512'
+.\start_windows.bat
+```
 > Why: Qwen2.5-32B has the best creative vocabulary and JSON adherence. CTX=8192 gives room for long scene descriptions + structured output. Q5_K_M is the sweet spot for 32GB.
 
 **Chatbot / Conversational AI / Customer Support**
@@ -129,6 +173,15 @@ set QUANT=Q6_K
 set CTX=4096
 set GPU_LAYERS=99
 set BATCH_SIZE=512
+.\start_windows.bat
+```
+```powershell
+# Windows (PowerShell)
+$env:MODEL_FAMILY='mistral_24b'
+$env:QUANT='Q6_K'
+$env:CTX='4096'
+$env:GPU_LAYERS='99'
+$env:BATCH_SIZE='512'
 .\start_windows.bat
 ```
 > Why: Mistral is the fastest model with natural dialogue flow. CTX=4096 is enough for multi-turn chat. Q6_K at 20GB leaves plenty of headroom.
@@ -150,6 +203,15 @@ set GPU_LAYERS=99
 set BATCH_SIZE=512
 .\start_windows.bat
 ```
+```powershell
+# Windows 32GB (PowerShell)
+$env:MODEL_FAMILY='qwen_32b'
+$env:QUANT='Q5_K_M'
+$env:CTX='4096'
+$env:GPU_LAYERS='99'
+$env:BATCH_SIZE='512'
+.\start_windows.bat
+```
 > Why: Llama 70B is the strongest coder but needs 48GB+. On 32GB, Qwen2.5-32B is a solid alternative with good code understanding. CTX=4096 covers most code files.
 
 **RAG / Document Q&A / Tool Use / Agents**
@@ -163,6 +225,15 @@ set QUANT=Q5_K_M
 set CTX=16384
 set GPU_LAYERS=99
 set BATCH_SIZE=256
+.\start_windows.bat
+```
+```powershell
+# Windows (PowerShell)
+$env:MODEL_FAMILY='qwen_32b'
+$env:QUANT='Q5_K_M'
+$env:CTX='16384'
+$env:GPU_LAYERS='99'
+$env:BATCH_SIZE='256'
 .\start_windows.bat
 ```
 > Why: Qwen2.5 has the best tool-calling accuracy and 128K native context. CTX=16384 fits large documents. BATCH_SIZE=256 reduces memory spikes during long-context ingestion.
@@ -180,6 +251,15 @@ set GPU_LAYERS=99
 set BATCH_SIZE=512
 .\start_windows.bat
 ```
+```powershell
+# Windows (PowerShell)
+$env:MODEL_FAMILY='mistral_24b'
+$env:QUANT='Q6_K'
+$env:CTX='8192'
+$env:GPU_LAYERS='99'
+$env:BATCH_SIZE='512'
+.\start_windows.bat
+```
 > Why: Mistral supports 24 languages natively. CTX=8192 handles full-page translations. Fast inference keeps turnaround low.
 
 **Summarization / Report Analysis**
@@ -193,6 +273,15 @@ set QUANT=Q5_K_M
 set CTX=16384
 set GPU_LAYERS=99
 set BATCH_SIZE=256
+.\start_windows.bat
+```
+```powershell
+# Windows (PowerShell)
+$env:MODEL_FAMILY='qwen_32b'
+$env:QUANT='Q5_K_M'
+$env:CTX='16384'
+$env:GPU_LAYERS='99'
+$env:BATCH_SIZE='256'
 .\start_windows.bat
 ```
 > Why: Qwen2.5's 128K native context and strong extraction accuracy. CTX=16384 fits ~12K words of input. Lower batch size prevents OOM on large prompts.
@@ -210,6 +299,15 @@ set GPU_LAYERS=99
 set BATCH_SIZE=256
 .\start_windows.bat
 ```
+```powershell
+# Windows (PowerShell)
+$env:MODEL_FAMILY='lfm2_24b'
+$env:QUANT='Q4_K_M'
+$env:CTX='2048'
+$env:GPU_LAYERS='99'
+$env:BATCH_SIZE='256'
+.\start_windows.bat
+```
 > Why: LFM2's MoE activates only 2B params per token — 15GB model with fast inference. Works on 20GB RAM machines.
 
 **Speed-First / Batch Processing / API Pipelines**
@@ -223,6 +321,15 @@ set QUANT=Q4_K_M
 set CTX=2048
 set GPU_LAYERS=99
 set BATCH_SIZE=1024
+.\start_windows.bat
+```
+```powershell
+# Windows (PowerShell)
+$env:MODEL_FAMILY='mistral_24b'
+$env:QUANT='Q4_K_M'
+$env:CTX='2048'
+$env:GPU_LAYERS='99'
+$env:BATCH_SIZE='1024'
 .\start_windows.bat
 ```
 > Why: Smallest dense model at lowest usable quant = maximum tok/s. CTX=2048 and BATCH_SIZE=1024 optimize for throughput over quality.
@@ -240,7 +347,159 @@ set GPU_LAYERS=99
 set BATCH_SIZE=512
 .\start_windows.bat
 ```
+```powershell
+# Windows (PowerShell)
+$env:MODEL_FAMILY='custom'
+$env:MODEL_PATH='C:\models\my-model.gguf'
+$env:CTX='4096'
+$env:GPU_LAYERS='99'
+$env:BATCH_SIZE='512'
+.\start_windows.bat
+```
 > Chat template is auto-detected from the GGUF metadata by llama-server. Adjust CTX and GPU_LAYERS based on model size and your hardware.
+
+### Recommended Directory Structure for Models
+
+Organise your GGUF files in `~/local-llms` (macOS/Linux) or `C:\local-llms` (Windows) using this structure:
+
+```
+~/local-llms/{MODEL_FAMILY}/{QUANT}/
+```
+
+The directory names map 1:1 with the env vars you pass to ParleyAI.
+
+**Recommended layout:**
+
+```
+~/local-llms/                                          # macOS / Linux
+C:\local-llms\                                         # Windows
+
+├── qwen_32b/                                      # MODEL_FAMILY=qwen_32b
+│   ├── Q4_K_M/                                    #   QUANT=Q4_K_M
+│   │   └── qwen2.5-32b-instruct-q4_k_m.gguf      #   20 GB (single file)
+│   └── Q5_K_M/                                    #   QUANT=Q5_K_M
+│       ├── qwen2.5-32b-instruct-q5_k_m-00001-of-00006.gguf
+│       ├── qwen2.5-32b-instruct-q5_k_m-00002-of-00006.gguf
+│       ├── qwen2.5-32b-instruct-q5_k_m-00003-of-00006.gguf
+│       ├── qwen2.5-32b-instruct-q5_k_m-00004-of-00006.gguf
+│       ├── qwen2.5-32b-instruct-q5_k_m-00005-of-00006.gguf
+│       └── qwen2.5-32b-instruct-q5_k_m-00006-of-00006.gguf  #   23 GB total (6 parts)
+│
+├── mistral_24b/                                   # MODEL_FAMILY=mistral_24b
+│   ├── Q4_K_M/
+│   │   └── mistralai_Mistral-Small-3.1-...-Q4_K_M.gguf  # 14 GB
+│   └── Q6_K/
+│       └── mistralai_Mistral-Small-3.1-...-Q6_K.gguf    # 20 GB
+│
+├── lfm2_24b/                                      # MODEL_FAMILY=lfm2_24b
+│   ├── Q4_K_M/
+│   │   └── LFM2-24B-A2B-Q4_K_M.gguf              # 15 GB
+│   └── Q8_0/
+│       └── LFM2-24B-A2B-Q8_0.gguf                # 26 GB
+│
+└── llama_70b/                                     # MODEL_FAMILY=llama_70b (48GB+)
+    └── Q4_K_M/
+        └── Llama-3.3-70B-Instruct-Q4_K_M.gguf    # 43 GB
+```
+
+**Usage — just set `MODEL_PATH` to the root, the code finds the right file:**
+
+```bash
+# macOS / Linux — MODEL_PATH + MODEL_FAMILY + QUANT maps to the right subfolder
+MODEL_PATH=~/local-llms MODEL_FAMILY=qwen_32b QUANT=Q5_K_M CTX=8192 ./start.sh
+
+# Switch quant — same MODEL_PATH, just change QUANT
+MODEL_PATH=~/local-llms MODEL_FAMILY=qwen_32b QUANT=Q4_K_M CTX=8192 ./start.sh
+
+# Different model
+MODEL_PATH=~/local-llms MODEL_FAMILY=mistral_24b QUANT=Q6_K CTX=8192 ./start.sh
+```
+```bat
+:: Windows (CMD)
+set MODEL_PATH=C:\local-llms
+set MODEL_FAMILY=qwen_32b
+set QUANT=Q5_K_M
+set CTX=8192
+.\start_windows.bat
+```
+```powershell
+# Windows (PowerShell)
+$env:MODEL_PATH='C:\local-llms'
+$env:MODEL_FAMILY='qwen_32b'
+$env:QUANT='Q5_K_M'
+$env:CTX='8192'
+.\start_windows.bat
+```
+
+> **Key idea:** `MODEL_PATH` always points to the root (`~/local-llms`). The code resolves `{MODEL_PATH}/{MODEL_FAMILY}/{QUANT}/` automatically. You never need to change `MODEL_PATH` — just switch `MODEL_FAMILY` and `QUANT`.
+
+**The code also supports simpler layouts** (for backward compatibility):
+
+| `MODEL_PATH` points to | Example | Works? |
+|---|---|---|
+| `~/local-llms` (root) | Searches `{root}/{family}/{quant}/`, then `{root}/{family}/`, then `{root}/` | ✅ Recommended |
+| `~/local-llms/qwen_32b` (family dir) | Searches `{dir}/{quant}/`, then `{dir}/` | ✅ |
+| `~/local-llms/qwen_32b/Q5_K_M` (quant dir) | Searches `{dir}/` directly | ✅ |
+| Direct `.gguf` file path | Uses that file | ✅ |
+| Split first part (`-00001-of-*.gguf`) | Uses that file; llama-server reads all parts | ✅ |
+
+### Single-File vs Split GGUF
+
+Some models on HuggingFace are split into multiple parts (e.g. 6 files) due to file size limits. Both formats work:
+
+| Type | Example | How to use |
+|---|---|---|
+| **Single file** | `model-q4_k_m.gguf` | Point `MODEL_PATH` to the file or its directory |
+| **Split files** | `model-q5_k_m-00001-of-00006.gguf` through `...-00006-of-00006.gguf` | Keep all parts in the same folder, point `MODEL_PATH` to the directory or to the `-00001-` file |
+
+**Which models have split files?**
+
+| Model | Q4_K_M | Q5_K_M | Q6_K | Q8_0 |
+|---|---|---|---|---|
+| **Qwen2.5-32B** | Single | Split (6 parts) | Split | Split |
+| **Mistral 24B** | Single | Single | Single | Single |
+| **LFM2-24B** | Single | Single | Single | Single |
+| **Llama 70B** | Split | Split | Split | Split |
+
+**Downloading models manually:**
+
+```bash
+# Download split model into the right folder (e.g. Qwen 32B Q5_K_M)
+pip install huggingface_hub
+huggingface-cli download Qwen/Qwen2.5-32B-Instruct-GGUF \
+  --include "qwen2.5-32b-instruct-q5_k_m*.gguf" \
+  --local-dir ~/local-llms/qwen_32b/Q5_K_M \
+  --local-dir-use-symlinks False
+
+# Download single-file model (e.g. Mistral 24B Q6_K)
+huggingface-cli download bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF \
+  --include "mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q6_K.gguf" \
+  --local-dir ~/local-llms/mistral_24b/Q6_K \
+  --local-dir-use-symlinks False
+
+# Download another quant of the same model
+huggingface-cli download bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF \
+  --include "mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q4_K_M.gguf" \
+  --local-dir ~/local-llms/mistral_24b/Q4_K_M \
+  --local-dir-use-symlinks False
+```
+```powershell
+# Windows (PowerShell) — download Qwen 32B Q5_K_M (split, 6 parts)
+huggingface-cli download Qwen/Qwen2.5-32B-Instruct-GGUF `
+  --include "qwen2.5-32b-instruct-q5_k_m*.gguf" `
+  --local-dir C:\local-llms\qwen_32b\Q5_K_M `
+  --local-dir-use-symlinks False
+
+# Windows (PowerShell) — download Mistral 24B Q6_K (single file)
+huggingface-cli download bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF `
+  --include "mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q6_K.gguf" `
+  --local-dir C:\local-llms\mistral_24b\Q6_K `
+  --local-dir-use-symlinks False
+```
+
+> **You don\'t need to merge split files.** `llama-server` loads them automatically from the first part. Just keep all parts in the same folder.
+
+> **If you don\'t set `MODEL_PATH`**, ParleyAI auto-downloads from HuggingFace on first run (single-file models only). For split files, use the download commands above.
 
 **Original models:**
 - [meta-llama/Llama-3.3-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct) (Meta)
@@ -420,13 +679,13 @@ cd ..
 **Tested on Mac M4 Pro with 48GB RAM** - running perfectly!
 
 ```bash
-MODEL_PATH=~/llama-models QUANT=IQ3_M CTX=2048 GPU_LAYERS=40 ./start.sh
+MODEL_PATH=~/local-llms QUANT=IQ3_M CTX=2048 GPU_LAYERS=40 ./start.sh
 ```
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
 | `MODEL_FAMILY` | `llama_70b` | `llama_70b`, `qwen_32b`, `mistral_24b`, `lfm2_24b`, or `custom` |
-| `MODEL_PATH` | `~/llama-models` | Directory or path to GGUF file (required for `custom`) |
+| `MODEL_PATH` | `~/local-llms` | Directory or path to GGUF file (required for `custom`) |
 | `QUANT` | `Q4_K_M` | Quantization (options depend on `MODEL_FAMILY`) |
 | `CTX` | `2048` | Context window (tokens) |
 | `GPU_LAYERS` | `99` or `-1` | Layers offloaded to GPU |
@@ -494,6 +753,12 @@ MODEL_FAMILY=custom MODEL_PATH=~/models/my-model.gguf CTX=4096 ./start.sh
 set MODEL_FAMILY=qwen_32b
 set QUANT=Q5_K_M
 set CTX=8192
+.\start_windows.bat
+```
+```powershell
+$env:MODEL_FAMILY='qwen_32b'
+$env:QUANT='Q5_K_M'
+$env:CTX='8192'
 .\start_windows.bat
 ```
 
@@ -628,7 +893,7 @@ For Windows/Linux with NVIDIA GPUs, the model is split between **VRAM** (fast) a
 ```powershell
 # RTX 4060 (8GB VRAM) - Windows
 $env:MODEL_FAMILY="llama_70b"   # or qwen_32b, mistral_24b, lfm2_24b, custom
-$env:MODEL_PATH="C:\llama-models"
+$env:MODEL_PATH="C:\local-llms"
 $env:QUANT="IQ2_XXS"
 $env:CTX="1024"
 $env:GPU_LAYERS="18"
@@ -638,7 +903,7 @@ $env:GPU_LAYERS="18"
 MODEL_FAMILY=qwen_32b QUANT=Q5_K_M CTX=8192 GPU_LAYERS=99 ./start.sh
 
 # RTX 4090 (24GB VRAM) - Llama 70B
-MODEL_PATH=~/llama-models QUANT=Q3_K_M CTX=2048 GPU_LAYERS=45 ./start.sh
+MODEL_PATH=~/local-llms QUANT=Q3_K_M CTX=2048 GPU_LAYERS=45 ./start.sh
 
 # RTX 3070 Ti (8GB VRAM) - Mistral 24B (smaller model, faster)
 MODEL_FAMILY=mistral_24b QUANT=Q4_K_M CTX=4096 GPU_LAYERS=33 ./start.sh

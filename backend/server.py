@@ -55,37 +55,76 @@ GPU_LAYERS = int(os.getenv("GPU_LAYERS", "-1"))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "512"))
 
 # Resolve MODEL_PATH - handle directory vs file (filename depends on model_family)
+def _find_split_first_part(directory: str, stem: str) -> str | None:
+    """Find the first part of a split GGUF (e.g. model-00001-of-00006.gguf)."""
+    pattern = os.path.join(directory, f"{stem}-00001-of-*.gguf")
+    matches = sorted(glob.glob(pattern))
+    return matches[0] if matches else None
+
+def _find_gguf_in_dir(directory: str, filename: str | None) -> str | None:
+    """Search a directory for a GGUF file by exact name, split pattern, variant, or sole file."""
+    if filename:
+        full_path = os.path.join(directory, filename)
+        if os.path.exists(full_path):
+            return full_path
+
+        stem = os.path.splitext(filename)[0]
+        split_path = _find_split_first_part(directory, stem)
+        if split_path:
+            return split_path
+
+        variant_matches = sorted(glob.glob(os.path.join(directory, f"{stem}*.gguf")))
+        if variant_matches:
+            return variant_matches[0]
+
+    gguf_matches = sorted(glob.glob(os.path.join(directory, "*.gguf")))
+    non_split = [f for f in gguf_matches if not _is_split_continuation(f)]
+    if len(non_split) == 1:
+        return non_split[0]
+    return None
+
+def _is_split_continuation(path: str) -> bool:
+    """True for split parts 2+ (not the first part, not single files)."""
+    name = os.path.basename(path)
+    for i in range(2, 100):
+        if f"-{i:05d}-of-" in name:
+            return True
+    return False
+
 def resolve_model_path(path_env: str | None, quant: str, model_family: str) -> str | None:
-    """Resolve model path from environment variable."""
+    """Resolve model path from environment variable.
+    
+    Search order for directories:
+      1. {path}/{model_family}/{quant}/  (e.g. ~/local-llms/qwen_32b/Q5_K_M/)
+      2. {path}/{model_family}/          (e.g. ~/local-llms/qwen_32b/)
+      3. {path}/                         (e.g. ~/local-llms/)
+    At each level: exact filename > split first part > variant > sole GGUF.
+    """
     if path_env is None:
         return None
     
     path = os.path.expanduser(path_env)
     
     if os.path.isdir(path):
-        # For custom family or when filename is empty, just find any single GGUF in the dir
         quants = MODEL_FAMILIES.get(model_family, {}).get("quants", {})
         filename = quants.get(quant, {}).get("filename") if quant in quants else None
-        if not filename:
-            gguf_matches = sorted(glob.glob(os.path.join(path, "*.gguf")))
-            if len(gguf_matches) == 1:
-                return gguf_matches[0]
-            return None
-        full_path = os.path.join(path, filename)
-        if os.path.exists(full_path):
-            return full_path
 
-        # Fallback: allow variant filenames like *_2.gguf in the same directory.
-        stem = os.path.splitext(filename)[0]
-        variant_matches = sorted(glob.glob(os.path.join(path, f"{stem}*.gguf")))
-        if variant_matches:
-            return variant_matches[0]
+        # Check {path}/{model_family}/{quant}/ first
+        nested = os.path.join(path, model_family, quant)
+        if os.path.isdir(nested):
+            result = _find_gguf_in_dir(nested, filename)
+            if result:
+                return result
 
-        # Last resort: if there's exactly one GGUF file, use it.
-        gguf_matches = sorted(glob.glob(os.path.join(path, "*.gguf")))
-        if len(gguf_matches) == 1:
-            return gguf_matches[0]
-        return None
+        # Check {path}/{model_family}/
+        family_dir = os.path.join(path, model_family)
+        if os.path.isdir(family_dir):
+            result = _find_gguf_in_dir(family_dir, filename)
+            if result:
+                return result
+
+        # Check {path}/ directly
+        return _find_gguf_in_dir(path, filename)
     
     if os.path.isfile(path):
         return path
