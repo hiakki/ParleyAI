@@ -98,6 +98,150 @@ Higher quant = better quality but more RAM. The sweet spot depends on your hardw
 
 > **Rule of thumb:** Pick the highest quant where the model fits with ≥5GB headroom. Going one quant higher gives <2% quality gain but can cut speed in half if you hit RAM limits.
 
+### Ready-to-Use Configurations by Task
+
+Copy-paste the right config for your task. All tuned for **32GB RAM + NVIDIA GPU (8–12GB VRAM)**.
+
+**Story Generation / Screenwriting / NarrateAI**
+```bash
+# macOS / Linux
+MODEL_FAMILY=qwen_32b QUANT=Q5_K_M CTX=8192 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
+```
+```bat
+:: Windows (CMD)
+set MODEL_FAMILY=qwen_32b
+set QUANT=Q5_K_M
+set CTX=8192
+set GPU_LAYERS=99
+set BATCH_SIZE=512
+.\start_windows.bat
+```
+> Why: Qwen2.5-32B has the best creative vocabulary and JSON adherence. CTX=8192 gives room for long scene descriptions + structured output. Q5_K_M is the sweet spot for 32GB.
+
+**Chatbot / Conversational AI / Customer Support**
+```bash
+MODEL_FAMILY=mistral_24b QUANT=Q6_K CTX=4096 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
+```
+```bat
+:: Windows (CMD)
+set MODEL_FAMILY=mistral_24b
+set QUANT=Q6_K
+set CTX=4096
+set GPU_LAYERS=99
+set BATCH_SIZE=512
+.\start_windows.bat
+```
+> Why: Mistral is the fastest model with natural dialogue flow. CTX=4096 is enough for multi-turn chat. Q6_K at 20GB leaves plenty of headroom.
+
+**Coding Assistant / Code Review**
+```bash
+# 48GB+ RAM (Mac M4 Pro, etc.)
+MODEL_FAMILY=llama_70b QUANT=Q4_K_M CTX=4096 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
+
+# 32GB RAM fallback — Qwen is second-best for code
+MODEL_FAMILY=qwen_32b QUANT=Q5_K_M CTX=4096 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
+```
+```bat
+:: Windows 32GB (CMD)
+set MODEL_FAMILY=qwen_32b
+set QUANT=Q5_K_M
+set CTX=4096
+set GPU_LAYERS=99
+set BATCH_SIZE=512
+.\start_windows.bat
+```
+> Why: Llama 70B is the strongest coder but needs 48GB+. On 32GB, Qwen2.5-32B is a solid alternative with good code understanding. CTX=4096 covers most code files.
+
+**RAG / Document Q&A / Tool Use / Agents**
+```bash
+MODEL_FAMILY=qwen_32b QUANT=Q5_K_M CTX=16384 GPU_LAYERS=99 BATCH_SIZE=256 ./start.sh
+```
+```bat
+:: Windows (CMD)
+set MODEL_FAMILY=qwen_32b
+set QUANT=Q5_K_M
+set CTX=16384
+set GPU_LAYERS=99
+set BATCH_SIZE=256
+.\start_windows.bat
+```
+> Why: Qwen2.5 has the best tool-calling accuracy and 128K native context. CTX=16384 fits large documents. BATCH_SIZE=256 reduces memory spikes during long-context ingestion.
+
+**Translation / Multilingual**
+```bash
+MODEL_FAMILY=mistral_24b QUANT=Q6_K CTX=8192 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
+```
+```bat
+:: Windows (CMD)
+set MODEL_FAMILY=mistral_24b
+set QUANT=Q6_K
+set CTX=8192
+set GPU_LAYERS=99
+set BATCH_SIZE=512
+.\start_windows.bat
+```
+> Why: Mistral supports 24 languages natively. CTX=8192 handles full-page translations. Fast inference keeps turnaround low.
+
+**Summarization / Report Analysis**
+```bash
+MODEL_FAMILY=qwen_32b QUANT=Q5_K_M CTX=16384 GPU_LAYERS=99 BATCH_SIZE=256 ./start.sh
+```
+```bat
+:: Windows (CMD)
+set MODEL_FAMILY=qwen_32b
+set QUANT=Q5_K_M
+set CTX=16384
+set GPU_LAYERS=99
+set BATCH_SIZE=256
+.\start_windows.bat
+```
+> Why: Qwen2.5's 128K native context and strong extraction accuracy. CTX=16384 fits ~12K words of input. Lower batch size prevents OOM on large prompts.
+
+**Low-RAM / Lightweight / Embedded (20–24GB RAM)**
+```bash
+MODEL_FAMILY=lfm2_24b QUANT=Q4_K_M CTX=2048 GPU_LAYERS=99 BATCH_SIZE=256 ./start.sh
+```
+```bat
+:: Windows (CMD)
+set MODEL_FAMILY=lfm2_24b
+set QUANT=Q4_K_M
+set CTX=2048
+set GPU_LAYERS=99
+set BATCH_SIZE=256
+.\start_windows.bat
+```
+> Why: LFM2's MoE activates only 2B params per token — 15GB model with fast inference. Works on 20GB RAM machines.
+
+**Speed-First / Batch Processing / API Pipelines**
+```bash
+MODEL_FAMILY=mistral_24b QUANT=Q4_K_M CTX=2048 GPU_LAYERS=99 BATCH_SIZE=1024 ./start.sh
+```
+```bat
+:: Windows (CMD)
+set MODEL_FAMILY=mistral_24b
+set QUANT=Q4_K_M
+set CTX=2048
+set GPU_LAYERS=99
+set BATCH_SIZE=1024
+.\start_windows.bat
+```
+> Why: Smallest dense model at lowest usable quant = maximum tok/s. CTX=2048 and BATCH_SIZE=1024 optimize for throughput over quality.
+
+**Any Custom GGUF Model**
+```bash
+MODEL_FAMILY=custom MODEL_PATH=~/models/my-model.gguf CTX=4096 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
+```
+```bat
+:: Windows (CMD)
+set MODEL_FAMILY=custom
+set MODEL_PATH=C:\models\my-model.gguf
+set CTX=4096
+set GPU_LAYERS=99
+set BATCH_SIZE=512
+.\start_windows.bat
+```
+> Chat template is auto-detected from the GGUF metadata by llama-server. Adjust CTX and GPU_LAYERS based on model size and your hardware.
+
 **Original models:**
 - [meta-llama/Llama-3.3-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct) (Meta)
 - [Qwen/Qwen2.5-32B-Instruct](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct) (Alibaba)
