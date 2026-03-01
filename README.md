@@ -6,10 +6,10 @@ A full-stack chat application for running large GGUF models locally.
 
 | `MODEL_FAMILY` | Model | GGUF Downloads | RAM | Best for |
 |---|---|---|---|---|
-| `llama_70b` | Llama 3.3 70B Instruct | [bartowski GGUF](https://huggingface.co/bartowski/Llama-3.3-70B-Instruct-GGUF) | 48GB+ | General-purpose, coding |
-| `qwen_32b` | Qwen2.5-32B-Instruct | [Qwen GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) | 24–40GB | **Creative writing, JSON, structured output** |
-| `mistral_24b` | Mistral Small 3.1 24B | [Mistral GGUF](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) | 20–32GB | Fast inference, instruction following |
-| `lfm2_24b` | LFM2-24B-A2B | [LiquidAI GGUF](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF) | 20–35GB | Efficient MoE (2B active params) |
+| `Llama-3.3-70B-Instruct` | Llama 3.3 70B Instruct | [bartowski GGUF](https://huggingface.co/bartowski/Llama-3.3-70B-Instruct-GGUF) | 48GB+ | General-purpose, coding |
+| `Qwen2.5-32B-Instruct` | Qwen2.5-32B-Instruct | [Qwen GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) | 24–40GB | **Creative writing, JSON, structured output** |
+| `Mistral-Small-3.1-24B-Instruct` | Mistral Small 3.1 24B | [Mistral GGUF](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) | 20–32GB | Fast inference, instruction following |
+| `LFM2-24B-A2B` | LFM2-24B-A2B | [LiquidAI GGUF](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF) | 20–35GB | Efficient MoE (2B active params) |
 | `custom` | Any GGUF model | — | varies | Bring your own model via `MODEL_PATH` |
 
 **Supported platforms:**
@@ -21,12 +21,12 @@ A full-stack chat application for running large GGUF models locally.
 
 | Hardware | Top Pick | `MODEL_FAMILY` | `QUANT` | Download |
 |---|---|---|---|---|
-| **48GB+ RAM** (M4 Pro, etc.) | Llama 3.3 70B | `llama_70b` | `Q4_K_M` | [43GB GGUF](https://huggingface.co/bartowski/Llama-3.3-70B-Instruct-GGUF) |
-| **32GB RAM + RTX 4070** | Qwen2.5-32B | `qwen_32b` | `Q5_K_M` | [23GB GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) |
-| **32GB RAM** (story/JSON) | Qwen2.5-32B | `qwen_32b` | `Q4_K_M` | [20GB GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) |
-| **32GB RAM** (fast) | Mistral Small 3.1 | `mistral_24b` | `Q6_K` | [20GB GGUF](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) |
-| **24GB RAM** | Mistral Small 3.1 | `mistral_24b` | `Q4_K_M` | [14GB GGUF](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) |
-| **20GB RAM** | LFM2-24B-A2B | `lfm2_24b` | `Q4_0` | [14GB GGUF](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF) |
+| **48GB+ RAM** (M4 Pro, etc.) | Llama 3.3 70B | `Llama-3.3-70B-Instruct` | `Q4_K_M` | [43GB GGUF](https://huggingface.co/bartowski/Llama-3.3-70B-Instruct-GGUF) |
+| **32GB RAM + RTX 4070** | Qwen2.5-32B | `Qwen2.5-32B-Instruct` | `Q5_K_M` | [23GB GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) |
+| **32GB RAM** (story/JSON) | Qwen2.5-32B | `Qwen2.5-32B-Instruct` | `Q4_K_M` | [20GB GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) |
+| **32GB RAM** (fast) | Mistral Small 3.1 | `Mistral-Small-3.1-24B-Instruct` | `Q6_K` | [20GB GGUF](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) |
+| **24GB RAM** | Mistral Small 3.1 | `Mistral-Small-3.1-24B-Instruct` | `Q4_K_M` | [14GB GGUF](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) |
+| **20GB RAM** | LFM2-24B-A2B | `LFM2-24B-A2B` | `Q4_0` | [14GB GGUF](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF) |
 
 ### Model Comparison (i7 + RTX 4070 8GB + 32GB RAM)
 
@@ -140,11 +140,11 @@ Copy-paste the right config for your task. All tuned for **32GB RAM + NVIDIA GPU
 **Story Generation / Screenwriting / NarrateAI**
 ```bash
 # macOS / Linux
-MODEL_FAMILY=qwen_32b QUANT=Q5_K_M CTX=8192 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
+MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=8192 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
 ```
 ```bat
 :: Windows (CMD)
-set MODEL_FAMILY=qwen_32b
+set MODEL_FAMILY=Qwen2.5-32B-Instruct
 set QUANT=Q5_K_M
 set CTX=8192
 set GPU_LAYERS=99
@@ -153,7 +153,7 @@ set BATCH_SIZE=512
 ```
 ```powershell
 # Windows (PowerShell)
-$env:MODEL_FAMILY='qwen_32b'
+$env:MODEL_FAMILY='Qwen2.5-32B-Instruct'
 $env:QUANT='Q5_K_M'
 $env:CTX='8192'
 $env:GPU_LAYERS='99'
@@ -164,11 +164,11 @@ $env:BATCH_SIZE='512'
 
 **Chatbot / Conversational AI / Customer Support**
 ```bash
-MODEL_FAMILY=mistral_24b QUANT=Q6_K CTX=4096 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
+MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct QUANT=Q6_K CTX=4096 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
 ```
 ```bat
 :: Windows (CMD)
-set MODEL_FAMILY=mistral_24b
+set MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct
 set QUANT=Q6_K
 set CTX=4096
 set GPU_LAYERS=99
@@ -177,7 +177,7 @@ set BATCH_SIZE=512
 ```
 ```powershell
 # Windows (PowerShell)
-$env:MODEL_FAMILY='mistral_24b'
+$env:MODEL_FAMILY='Mistral-Small-3.1-24B-Instruct'
 $env:QUANT='Q6_K'
 $env:CTX='4096'
 $env:GPU_LAYERS='99'
@@ -189,14 +189,14 @@ $env:BATCH_SIZE='512'
 **Coding Assistant / Code Review**
 ```bash
 # 48GB+ RAM (Mac M4 Pro, etc.)
-MODEL_FAMILY=llama_70b QUANT=Q4_K_M CTX=4096 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
+MODEL_FAMILY=Llama-3.3-70B-Instruct QUANT=Q4_K_M CTX=4096 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
 
 # 32GB RAM fallback — Qwen is second-best for code
-MODEL_FAMILY=qwen_32b QUANT=Q5_K_M CTX=4096 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
+MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=4096 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
 ```
 ```bat
 :: Windows 32GB (CMD)
-set MODEL_FAMILY=qwen_32b
+set MODEL_FAMILY=Qwen2.5-32B-Instruct
 set QUANT=Q5_K_M
 set CTX=4096
 set GPU_LAYERS=99
@@ -205,7 +205,7 @@ set BATCH_SIZE=512
 ```
 ```powershell
 # Windows 32GB (PowerShell)
-$env:MODEL_FAMILY='qwen_32b'
+$env:MODEL_FAMILY='Qwen2.5-32B-Instruct'
 $env:QUANT='Q5_K_M'
 $env:CTX='4096'
 $env:GPU_LAYERS='99'
@@ -216,11 +216,11 @@ $env:BATCH_SIZE='512'
 
 **RAG / Document Q&A / Tool Use / Agents**
 ```bash
-MODEL_FAMILY=qwen_32b QUANT=Q5_K_M CTX=16384 GPU_LAYERS=99 BATCH_SIZE=256 ./start.sh
+MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=16384 GPU_LAYERS=99 BATCH_SIZE=256 ./start.sh
 ```
 ```bat
 :: Windows (CMD)
-set MODEL_FAMILY=qwen_32b
+set MODEL_FAMILY=Qwen2.5-32B-Instruct
 set QUANT=Q5_K_M
 set CTX=16384
 set GPU_LAYERS=99
@@ -229,7 +229,7 @@ set BATCH_SIZE=256
 ```
 ```powershell
 # Windows (PowerShell)
-$env:MODEL_FAMILY='qwen_32b'
+$env:MODEL_FAMILY='Qwen2.5-32B-Instruct'
 $env:QUANT='Q5_K_M'
 $env:CTX='16384'
 $env:GPU_LAYERS='99'
@@ -240,11 +240,11 @@ $env:BATCH_SIZE='256'
 
 **Translation / Multilingual**
 ```bash
-MODEL_FAMILY=mistral_24b QUANT=Q6_K CTX=8192 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
+MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct QUANT=Q6_K CTX=8192 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
 ```
 ```bat
 :: Windows (CMD)
-set MODEL_FAMILY=mistral_24b
+set MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct
 set QUANT=Q6_K
 set CTX=8192
 set GPU_LAYERS=99
@@ -253,7 +253,7 @@ set BATCH_SIZE=512
 ```
 ```powershell
 # Windows (PowerShell)
-$env:MODEL_FAMILY='mistral_24b'
+$env:MODEL_FAMILY='Mistral-Small-3.1-24B-Instruct'
 $env:QUANT='Q6_K'
 $env:CTX='8192'
 $env:GPU_LAYERS='99'
@@ -264,11 +264,11 @@ $env:BATCH_SIZE='512'
 
 **Summarization / Report Analysis**
 ```bash
-MODEL_FAMILY=qwen_32b QUANT=Q5_K_M CTX=16384 GPU_LAYERS=99 BATCH_SIZE=256 ./start.sh
+MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=16384 GPU_LAYERS=99 BATCH_SIZE=256 ./start.sh
 ```
 ```bat
 :: Windows (CMD)
-set MODEL_FAMILY=qwen_32b
+set MODEL_FAMILY=Qwen2.5-32B-Instruct
 set QUANT=Q5_K_M
 set CTX=16384
 set GPU_LAYERS=99
@@ -277,7 +277,7 @@ set BATCH_SIZE=256
 ```
 ```powershell
 # Windows (PowerShell)
-$env:MODEL_FAMILY='qwen_32b'
+$env:MODEL_FAMILY='Qwen2.5-32B-Instruct'
 $env:QUANT='Q5_K_M'
 $env:CTX='16384'
 $env:GPU_LAYERS='99'
@@ -288,11 +288,11 @@ $env:BATCH_SIZE='256'
 
 **Low-RAM / Lightweight / Embedded (20–24GB RAM)**
 ```bash
-MODEL_FAMILY=lfm2_24b QUANT=Q4_K_M CTX=2048 GPU_LAYERS=99 BATCH_SIZE=256 ./start.sh
+MODEL_FAMILY=LFM2-24B-A2B QUANT=Q4_K_M CTX=2048 GPU_LAYERS=99 BATCH_SIZE=256 ./start.sh
 ```
 ```bat
 :: Windows (CMD)
-set MODEL_FAMILY=lfm2_24b
+set MODEL_FAMILY=LFM2-24B-A2B
 set QUANT=Q4_K_M
 set CTX=2048
 set GPU_LAYERS=99
@@ -301,7 +301,7 @@ set BATCH_SIZE=256
 ```
 ```powershell
 # Windows (PowerShell)
-$env:MODEL_FAMILY='lfm2_24b'
+$env:MODEL_FAMILY='LFM2-24B-A2B'
 $env:QUANT='Q4_K_M'
 $env:CTX='2048'
 $env:GPU_LAYERS='99'
@@ -312,11 +312,11 @@ $env:BATCH_SIZE='256'
 
 **Speed-First / Batch Processing / API Pipelines**
 ```bash
-MODEL_FAMILY=mistral_24b QUANT=Q4_K_M CTX=2048 GPU_LAYERS=99 BATCH_SIZE=1024 ./start.sh
+MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct QUANT=Q4_K_M CTX=2048 GPU_LAYERS=99 BATCH_SIZE=1024 ./start.sh
 ```
 ```bat
 :: Windows (CMD)
-set MODEL_FAMILY=mistral_24b
+set MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct
 set QUANT=Q4_K_M
 set CTX=2048
 set GPU_LAYERS=99
@@ -325,7 +325,7 @@ set BATCH_SIZE=1024
 ```
 ```powershell
 # Windows (PowerShell)
-$env:MODEL_FAMILY='mistral_24b'
+$env:MODEL_FAMILY='Mistral-Small-3.1-24B-Instruct'
 $env:QUANT='Q4_K_M'
 $env:CTX='2048'
 $env:GPU_LAYERS='99'
@@ -374,50 +374,47 @@ The directory names map 1:1 with the env vars you pass to ParleyAI.
 ~/local-llms/                                          # macOS / Linux
 C:\local-llms\                                         # Windows
 
-├── qwen_32b/                                      # MODEL_FAMILY=qwen_32b
-│   ├── Q4_K_M/                                    #   QUANT=Q4_K_M
-│   │   └── qwen2.5-32b-instruct-q4_k_m.gguf      #   20 GB (single file)
-│   └── Q5_K_M/                                    #   QUANT=Q5_K_M
+├── Qwen2.5-32B-Instruct/                       # MODEL_FAMILY=Qwen2.5-32B-Instruct
+│   ├── Q4_K_M/                                  #   QUANT=Q4_K_M
+│   │   └── qwen2.5-32b-instruct-q4_k_m.gguf    #   20 GB (single file)
+│   └── Q5_K_M/                                  #   QUANT=Q5_K_M
 │       ├── qwen2.5-32b-instruct-q5_k_m-00001-of-00006.gguf
-│       ├── qwen2.5-32b-instruct-q5_k_m-00002-of-00006.gguf
-│       ├── qwen2.5-32b-instruct-q5_k_m-00003-of-00006.gguf
-│       ├── qwen2.5-32b-instruct-q5_k_m-00004-of-00006.gguf
-│       ├── qwen2.5-32b-instruct-q5_k_m-00005-of-00006.gguf
-│       └── qwen2.5-32b-instruct-q5_k_m-00006-of-00006.gguf  #   23 GB total (6 parts)
+│       ├── ...
+│       └── qwen2.5-32b-instruct-q5_k_m-00006-of-00006.gguf   # 23 GB (6 parts)
 │
-├── mistral_24b/                                   # MODEL_FAMILY=mistral_24b
+├── Mistral-Small-3.1-24B-Instruct/              # MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct
 │   ├── Q4_K_M/
-│   │   └── mistralai_Mistral-Small-3.1-...-Q4_K_M.gguf  # 14 GB
+│   │   └── mistralai_Mistral-Small-3.1-...-Q4_K_M.gguf       # 14 GB
 │   └── Q6_K/
-│       └── mistralai_Mistral-Small-3.1-...-Q6_K.gguf    # 20 GB
+│       └── mistralai_Mistral-Small-3.1-...-Q6_K.gguf         # 20 GB
 │
-├── lfm2_24b/                                      # MODEL_FAMILY=lfm2_24b
+├── LFM2-24B-A2B/                                # MODEL_FAMILY=LFM2-24B-A2B
 │   ├── Q4_K_M/
-│   │   └── LFM2-24B-A2B-Q4_K_M.gguf              # 15 GB
+│   │   └── LFM2-24B-A2B-Q4_K_M.gguf            # 15 GB
 │   └── Q8_0/
-│       └── LFM2-24B-A2B-Q8_0.gguf                # 26 GB
+│       └── LFM2-24B-A2B-Q8_0.gguf              # 26 GB
 │
-└── llama_70b/                                     # MODEL_FAMILY=llama_70b (48GB+)
+└── Llama-3.3-70B-Instruct/                      # MODEL_FAMILY=Llama-3.3-70B-Instruct (48GB+)
     └── Q4_K_M/
-        └── Llama-3.3-70B-Instruct-Q4_K_M.gguf    # 43 GB
+        └── Llama-3.3-70B-Instruct-Q4_K_M.gguf  # 43 GB
 ```
 
 **Usage — just set `MODEL_PATH` to the root, the code finds the right file:**
 
 ```bash
 # macOS / Linux — MODEL_PATH + MODEL_FAMILY + QUANT maps to the right subfolder
-MODEL_PATH=~/local-llms MODEL_FAMILY=qwen_32b QUANT=Q5_K_M CTX=8192 ./start.sh
+MODEL_PATH=~/local-llms MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=8192 ./start.sh
 
 # Switch quant — same MODEL_PATH, just change QUANT
-MODEL_PATH=~/local-llms MODEL_FAMILY=qwen_32b QUANT=Q4_K_M CTX=8192 ./start.sh
+MODEL_PATH=~/local-llms MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q4_K_M CTX=8192 ./start.sh
 
 # Different model
-MODEL_PATH=~/local-llms MODEL_FAMILY=mistral_24b QUANT=Q6_K CTX=8192 ./start.sh
+MODEL_PATH=~/local-llms MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct QUANT=Q6_K CTX=8192 ./start.sh
 ```
 ```bat
 :: Windows (CMD)
 set MODEL_PATH=C:\local-llms
-set MODEL_FAMILY=qwen_32b
+set MODEL_FAMILY=Qwen2.5-32B-Instruct
 set QUANT=Q5_K_M
 set CTX=8192
 .\start_windows.bat
@@ -425,7 +422,7 @@ set CTX=8192
 ```powershell
 # Windows (PowerShell)
 $env:MODEL_PATH='C:\local-llms'
-$env:MODEL_FAMILY='qwen_32b'
+$env:MODEL_FAMILY='Qwen2.5-32B-Instruct'
 $env:QUANT='Q5_K_M'
 $env:CTX='8192'
 .\start_windows.bat
@@ -438,8 +435,8 @@ $env:CTX='8192'
 | `MODEL_PATH` points to | Example | Works? |
 |---|---|---|
 | `~/local-llms` (root) | Searches `{root}/{family}/{quant}/`, then `{root}/{family}/`, then `{root}/` | ✅ Recommended |
-| `~/local-llms/qwen_32b` (family dir) | Searches `{dir}/{quant}/`, then `{dir}/` | ✅ |
-| `~/local-llms/qwen_32b/Q5_K_M` (quant dir) | Searches `{dir}/` directly | ✅ |
+| `~/local-llms/Qwen2.5-32B-Instruct` (family dir) | Searches `{dir}/{quant}/`, then `{dir}/` | ✅ |
+| `~/local-llms/Qwen2.5-32B-Instruct/Q5_K_M` (quant dir) | Searches `{dir}/` directly | ✅ |
 | Direct `.gguf` file path | Uses that file | ✅ |
 | Split first part (`-00001-of-*.gguf`) | Uses that file; llama-server reads all parts | ✅ |
 
@@ -468,32 +465,32 @@ Some models on HuggingFace are split into multiple parts (e.g. 6 files) due to f
 pip install huggingface_hub
 huggingface-cli download Qwen/Qwen2.5-32B-Instruct-GGUF \
   --include "qwen2.5-32b-instruct-q5_k_m*.gguf" \
-  --local-dir ~/local-llms/qwen_32b/Q5_K_M \
+  --local-dir ~/local-llms/Qwen2.5-32B-Instruct/Q5_K_M \
   --local-dir-use-symlinks False
 
 # Download single-file model (e.g. Mistral 24B Q6_K)
 huggingface-cli download bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF \
   --include "mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q6_K.gguf" \
-  --local-dir ~/local-llms/mistral_24b/Q6_K \
+  --local-dir ~/local-llms/Mistral-Small-3.1-24B-Instruct/Q6_K \
   --local-dir-use-symlinks False
 
 # Download another quant of the same model
 huggingface-cli download bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF \
   --include "mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q4_K_M.gguf" \
-  --local-dir ~/local-llms/mistral_24b/Q4_K_M \
+  --local-dir ~/local-llms/Mistral-Small-3.1-24B-Instruct/Q4_K_M \
   --local-dir-use-symlinks False
 ```
 ```powershell
 # Windows (PowerShell) — download Qwen 32B Q5_K_M (split, 6 parts)
 huggingface-cli download Qwen/Qwen2.5-32B-Instruct-GGUF `
   --include "qwen2.5-32b-instruct-q5_k_m*.gguf" `
-  --local-dir C:\local-llms\qwen_32b\Q5_K_M `
+  --local-dir C:\local-llms\Qwen2.5-32B-Instruct\Q5_K_M `
   --local-dir-use-symlinks False
 
 # Windows (PowerShell) — download Mistral 24B Q6_K (single file)
 huggingface-cli download bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF `
   --include "mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q6_K.gguf" `
-  --local-dir C:\local-llms\mistral_24b\Q6_K `
+  --local-dir C:\local-llms\Mistral-Small-3.1-24B-Instruct\Q6_K `
   --local-dir-use-symlinks False
 ```
 
@@ -684,7 +681,7 @@ MODEL_PATH=~/local-llms QUANT=IQ3_M CTX=2048 GPU_LAYERS=40 ./start.sh
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
-| `MODEL_FAMILY` | `llama_70b` | `llama_70b`, `qwen_32b`, `mistral_24b`, `lfm2_24b`, or `custom` |
+| `MODEL_FAMILY` | `Llama-3.3-70B-Instruct` | `Llama-3.3-70B-Instruct`, `Qwen2.5-32B-Instruct`, `Mistral-Small-3.1-24B-Instruct`, `LFM2-24B-A2B`, or `custom` |
 | `MODEL_PATH` | `~/local-llms` | Directory or path to GGUF file (required for `custom`) |
 | `QUANT` | `Q4_K_M` | Quantization (options depend on `MODEL_FAMILY`) |
 | `CTX` | `2048` | Context window (tokens) |
@@ -717,7 +714,7 @@ The tunnel URL is printed at startup and logged to `.tunnel.log`.
 
 ### Running Server-Based Models (Qwen, Mistral, LFM2, Custom)
 
-All model families except `llama_70b` use an external `llama-server` subprocess (from the [llama.cpp](https://github.com/ggml-org/llama.cpp) project). This covers Qwen2.5-32B, Mistral Small 3.1, LFM2-24B, and any custom GGUF model.
+All model families except `Llama-3.3-70B-Instruct` use an external `llama-server` subprocess (from the [llama.cpp](https://github.com/ggml-org/llama.cpp) project). This covers Qwen2.5-32B, Mistral Small 3.1, LFM2-24B, and any custom GGUF model.
 
 **Prerequisite — install `llama-server`:**
 
@@ -735,13 +732,13 @@ brew install llama.cpp
 
 ```bash
 # Qwen2.5-32B — best for creative writing, structured JSON, story generation
-MODEL_FAMILY=qwen_32b QUANT=Q5_K_M CTX=8192 ./start.sh
+MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=8192 ./start.sh
 
 # Mistral Small 3.1 24B — fast, strong instruction following
-MODEL_FAMILY=mistral_24b QUANT=Q6_K CTX=8192 ./start.sh
+MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct QUANT=Q6_K CTX=8192 ./start.sh
 
 # LFM2-24B — efficient MoE, fits in 30–35GB RAM
-MODEL_FAMILY=lfm2_24b QUANT=Q4_K_M ./start.sh
+MODEL_FAMILY=LFM2-24B-A2B QUANT=Q4_K_M ./start.sh
 
 # Any GGUF model — chat template auto-detected from the GGUF file
 MODEL_FAMILY=custom MODEL_PATH=~/models/my-model.gguf CTX=4096 ./start.sh
@@ -750,13 +747,13 @@ MODEL_FAMILY=custom MODEL_PATH=~/models/my-model.gguf CTX=4096 ./start.sh
 **Windows (CMD):**
 
 ```bat
-set MODEL_FAMILY=qwen_32b
+set MODEL_FAMILY=Qwen2.5-32B-Instruct
 set QUANT=Q5_K_M
 set CTX=8192
 .\start_windows.bat
 ```
 ```powershell
-$env:MODEL_FAMILY='qwen_32b'
+$env:MODEL_FAMILY='Qwen2.5-32B-Instruct'
 $env:QUANT='Q5_K_M'
 $env:CTX='8192'
 .\start_windows.bat
@@ -768,9 +765,9 @@ Models are auto-downloaded from Hugging Face on first run. Set `MODEL_PATH` to s
 
 | Family | Quants | Recommended (32GB RAM) |
 |---|---|---|
-| `qwen_32b` | Q3_K_M, Q4_K_M, Q5_K_M, Q6_K, Q8_0 | **Q5_K_M** (23GB) |
-| `mistral_24b` | Q4_K_M, Q5_K_M, Q6_K, Q8_0 | **Q6_K** (20GB) |
-| `lfm2_24b` | Q4_0, Q4_K_M, Q5_K_M, Q6_K, Q8_0, BF16, F16 | **Q4_K_M** (15GB) |
+| `Qwen2.5-32B-Instruct` | Q3_K_M, Q4_K_M, Q5_K_M, Q6_K, Q8_0 | **Q5_K_M** (23GB) |
+| `Mistral-Small-3.1-24B-Instruct` | Q4_K_M, Q5_K_M, Q6_K, Q8_0 | **Q6_K** (20GB) |
+| `LFM2-24B-A2B` | Q4_0, Q4_K_M, Q5_K_M, Q6_K, Q8_0, BF16, F16 | **Q4_K_M** (15GB) |
 | `custom` | N/A (set via `MODEL_PATH`) | — |
 
 
@@ -859,9 +856,9 @@ Running a 70B parameter model (normally ~140GB in FP16) efficiently requires:
 
 | Family | Model | GGUF Source | Quants | Recommended (32GB) |
 |---|---|---|---|---|
-| `qwen_32b` | [Qwen2.5-32B-Instruct](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) | [GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) | Q3_K_M – Q8_0 | **Q5_K_M** (23GB) |
-| `mistral_24b` | [Mistral Small 3.1 24B](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) | [GGUF](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) | Q4_K_M – Q8_0 | **Q6_K** (20GB) |
-| `lfm2_24b` | [LFM2-24B-A2B](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF) | [GGUF](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF) | Q4_0 – F16 | **Q4_K_M** (15GB) |
+| `Qwen2.5-32B-Instruct` | [Qwen2.5-32B-Instruct](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) | [GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) | Q3_K_M – Q8_0 | **Q5_K_M** (23GB) |
+| `Mistral-Small-3.1-24B-Instruct` | [Mistral Small 3.1 24B](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) | [GGUF](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) | Q4_K_M – Q8_0 | **Q6_K** (20GB) |
+| `LFM2-24B-A2B` | [LFM2-24B-A2B](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF) | [GGUF](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF) | Q4_0 – F16 | **Q4_K_M** (15GB) |
 | `custom` | Any GGUF | — | Set via `MODEL_PATH` | — |
 
 ### 🎮 NVIDIA GPU Recommendations
@@ -892,7 +889,7 @@ For Windows/Linux with NVIDIA GPUs, the model is split between **VRAM** (fast) a
 
 ```powershell
 # RTX 4060 (8GB VRAM) - Windows
-$env:MODEL_FAMILY="llama_70b"   # or qwen_32b, mistral_24b, lfm2_24b, custom
+$env:MODEL_FAMILY="Llama-3.3-70B-Instruct"   # or Qwen2.5-32B-Instruct, Mistral-Small-3.1-24B-Instruct, LFM2-24B-A2B, custom
 $env:MODEL_PATH="C:\local-llms"
 $env:QUANT="IQ2_XXS"
 $env:CTX="1024"
@@ -900,13 +897,13 @@ $env:GPU_LAYERS="18"
 .\start_windows.bat
 
 # RTX 4070 (12GB VRAM) + 32GB RAM - Qwen2.5-32B for creative writing
-MODEL_FAMILY=qwen_32b QUANT=Q5_K_M CTX=8192 GPU_LAYERS=99 ./start.sh
+MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=8192 GPU_LAYERS=99 ./start.sh
 
 # RTX 4090 (24GB VRAM) - Llama 70B
 MODEL_PATH=~/local-llms QUANT=Q3_K_M CTX=2048 GPU_LAYERS=45 ./start.sh
 
 # RTX 3070 Ti (8GB VRAM) - Mistral 24B (smaller model, faster)
-MODEL_FAMILY=mistral_24b QUANT=Q4_K_M CTX=4096 GPU_LAYERS=33 ./start.sh
+MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct QUANT=Q4_K_M CTX=4096 GPU_LAYERS=33 ./start.sh
 ```
 
 > **⚠️ VRAM vs RAM**: Unlike Apple Silicon's unified memory, NVIDIA GPUs have separate VRAM. If the model doesn't fit in VRAM, layers are offloaded to CPU (slower). Use `GPU_LAYERS` to control how many layers go to GPU.
@@ -1155,7 +1152,7 @@ python llama_transformer.py -m ~/.cache/huggingface/hub/.../Llama-3.3-70B-Instru
 
 ### "llama-server not found" or "Failed to load model"
 
-All model families except `llama_70b` (`qwen_32b`, `mistral_24b`, `lfm2_24b`, `custom`) require `llama-server` (from the llama.cpp project).
+All model families except `Llama-3.3-70B-Instruct` (`Qwen2.5-32B-Instruct`, `Mistral-Small-3.1-24B-Instruct`, `LFM2-24B-A2B`, `custom`) require `llama-server` (from the llama.cpp project).
 
 **Fix:** Install `llama-server`:
 

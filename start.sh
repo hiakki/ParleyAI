@@ -7,14 +7,14 @@ ParleyAI — Local Chat
 
 Usage:
   ./start.sh                         Start with defaults
-  MODEL_FAMILY=lfm2_24b ./start.sh   Use LFM2 model
+  MODEL_FAMILY=LFM2-24B-A2B ./start.sh   Use LFM2 model
   TUNNEL=on ./start.sh               Expose over the internet
 
 Environment variables:
 
   Model
-    MODEL_FAMILY    Model family to use               (default: llama_70b)
-                    Options: llama_70b, lfm2_24b, qwen_32b, mistral_24b, custom
+    MODEL_FAMILY    Model family to use               (default: Llama-3.3-70B-Instruct)
+                    Options: Llama-3.3-70B-Instruct, LFM2-24B-A2B, Qwen2.5-32B-Instruct, Mistral-Small-3.1-24B-Instruct, custom
     QUANT           Quantization level               (default: Q4_K_M)
     CTX             Context window in tokens          (default: 2048)
     MODEL_PATH      Path to GGUF file or directory    (default: auto-download)
@@ -38,13 +38,13 @@ Examples:
   QUANT=Q5_K_M ./start.sh
 
   # LFM2-24B on 32GB machine
-  MODEL_FAMILY=lfm2_24b QUANT=Q4_K_M ./start.sh
+  MODEL_FAMILY=LFM2-24B-A2B QUANT=Q4_K_M ./start.sh
 
   # Qwen2.5-32B — strong creative writing / JSON
-  MODEL_FAMILY=qwen_32b QUANT=Q5_K_M CTX=8192 ./start.sh
+  MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=8192 ./start.sh
 
   # Mistral Small 3.1 24B
-  MODEL_FAMILY=mistral_24b QUANT=Q6_K ./start.sh
+  MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct QUANT=Q6_K ./start.sh
 
   # Any GGUF model (chat template auto-detected by llama-server)
   MODEL_FAMILY=custom MODEL_PATH=~/models/my-model.gguf CTX=4096 ./start.sh
@@ -76,7 +76,7 @@ echo "=================================="
 echo ""
 
 # Configuration
-export MODEL_FAMILY="${MODEL_FAMILY:-llama_70b}"   # llama_70b, lfm2_24b, qwen_32b, mistral_24b, or custom
+export MODEL_FAMILY="${MODEL_FAMILY:-Llama-3.3-70B-Instruct}"   # Llama-3.3-70B-Instruct, LFM2-24B-A2B, Qwen2.5-32B-Instruct, Mistral-Small-3.1-24B-Instruct, or custom
 export QUANT="${QUANT:-Q4_K_M}"
 export CTX="${CTX:-2048}"
 export GPU_LAYERS="${GPU_LAYERS:-99}"

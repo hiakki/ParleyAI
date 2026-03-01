@@ -11,8 +11,8 @@ run large models on limited RAM through:
 4. Streaming layer-by-layer processing
 
 Supported model families:
-- llama_70b: Llama 3.3 70B Instruct (bartowski GGUF) — 48GB+ RAM recommended
-- lfm2_24b:  LFM2-24B-A2B (Liquid AI) — fits in 30–35GB RAM, ChatML format
+- Llama-3.3-70B-Instruct: Llama 3.3 70B Instruct (bartowski GGUF) — 48GB+ RAM recommended
+- LFM2-24B-A2B:  LFM2-24B-A2B (Liquid AI) — fits in 30–35GB RAM, ChatML format
 
 References:
 - https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct
@@ -63,9 +63,9 @@ class PerfMetrics:
 
 
 # Model families: each has display name, chat template type, and quantization options.
-# llama_70b: 48GB+ RAM recommended. lfm2_24b: fits in 30–35GB RAM (Liquid AI LFM2).
+# Llama-3.3-70B-Instruct: 48GB+ RAM recommended. LFM2-24B-A2B: fits in 30–35GB RAM (Liquid AI LFM2).
 MODEL_FAMILIES = {
-    "llama_70b": {
+    "Llama-3.3-70B-Instruct": {
         "name": "Llama 3.3 70B Instruct",
         "chat_template": "llama",
         "use_server": False,
@@ -293,7 +293,7 @@ MODEL_FAMILIES = {
     # LFM2-24B-A2B: 24B total, 2B active params. Fits in 32GB. ChatML format.
     # Uses llama-server subprocess because lfm2moe isn't in PyPI llama-cpp-python yet.
     # https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF
-    "lfm2_24b": {
+    "LFM2-24B-A2B": {
         "name": "LFM2-24B-A2B",
         "chat_template": "chatml",
         "use_server": True,
@@ -351,7 +351,7 @@ MODEL_FAMILIES = {
     },
     # Qwen2.5-32B-Instruct: strong creative writing, excellent JSON, good for 32GB RAM.
     # https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF
-    "qwen_32b": {
+    "Qwen2.5-32B-Instruct": {
         "name": "Qwen2.5-32B-Instruct",
         "chat_template": "chatml",
         "use_server": True,
@@ -395,7 +395,7 @@ MODEL_FAMILIES = {
     },
     # Mistral Small 3.1 24B: fast, strong instruction following, good creative writing.
     # https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF
-    "mistral_24b": {
+    "Mistral-Small-3.1-24B-Instruct": {
         "name": "Mistral-Small-3.1-24B-Instruct",
         "chat_template": "mistral",
         "use_server": True,
@@ -459,14 +459,14 @@ class LlamaTransformer:
     
     MODEL_FAMILIES = MODEL_FAMILIES
     
-    # Backward compatibility: default family quants (llama_70b)
-    QUANT_OPTIONS = MODEL_FAMILIES["llama_70b"]["quants"]
+    # Backward compatibility: default family quants (Llama-3.3-70B-Instruct)
+    QUANT_OPTIONS = MODEL_FAMILIES["Llama-3.3-70B-Instruct"]["quants"]
     
     def __init__(
         self,
         model_path: Optional[str] = None,
         quantization: str = "Q4_K_M",
-        model_family: str = "llama_70b",
+        model_family: str = "Llama-3.3-70B-Instruct",
         n_ctx: int = 2048,
         n_batch: int = 512,  # Increased default for faster prompt processing
         n_gpu_layers: int = -1,  # -1 = use all layers on GPU (Metal)
@@ -483,7 +483,7 @@ class LlamaTransformer:
         Args:
             model_path: Path to GGUF model file. If None, downloads automatically.
             quantization: Quantization level (depends on model_family; e.g. Q4_K_M).
-            model_family: "llama_70b" (Llama 3.3 70B) or "lfm2_24b" (LFM2-24B-A2B, 30–35GB RAM).
+            model_family: "Llama-3.3-70B-Instruct" (Llama 3.3 70B) or "LFM2-24B-A2B" (LFM2-24B-A2B, 30–35GB RAM).
             n_ctx: Context window size. Smaller = less RAM. Default 2048.
             n_batch: Batch size for prompt processing. Default 512 (larger = faster).
             n_gpu_layers: Layers to offload to GPU. -1 = all (recommended for Metal).
@@ -576,7 +576,7 @@ class LlamaTransformer:
             )
         except Exception as e:
             err_msg = str(e).strip()
-            if self.model_family != "llama_70b" and ("failed to load" in err_msg.lower() or "unknown model architecture" in err_msg.lower()):
+            if self.model_family != "Llama-3.3-70B-Instruct" and ("failed to load" in err_msg.lower() or "unknown model architecture" in err_msg.lower()):
                 raise RuntimeError(
                     f"{err_msg}\n\n"
                     f"The '{self.model_family}' architecture may not be supported by the "
@@ -917,7 +917,7 @@ class LlamaTransformer:
         return prompt
     
     @classmethod
-    def list_quantizations(cls, model_family: str = "llama_70b"):
+    def list_quantizations(cls, model_family: str = "Llama-3.3-70B-Instruct"):
         """Print available quantization options for a model family."""
         if model_family not in MODEL_FAMILIES:
             print(f"Unknown model_family: {model_family}. Options: {list(MODEL_FAMILIES.keys())}")
@@ -931,7 +931,7 @@ class LlamaTransformer:
         for qname, info in sorted(quants.items(), key=lambda x: x[1]["size_gb"]):
             print(f"{qname:<10} {info['size_gb']}GB{'':<6} {info['recommended_ram']:<12} {info['quality']}")
         print("-" * 70)
-        if model_family == "llama_70b":
+        if model_family == "Llama-3.3-70B-Instruct":
             print("\n✓ Recommended for 48GB RAM: Q4_K_M (best balance)")
             print("✓ Recommended for 16GB RAM: Q3_K_S or Q2_K")
         else:
@@ -974,7 +974,7 @@ class LlamaServerTransformer:
     def __init__(
         self,
         model_path: str,
-        model_family: str = "lfm2_24b",
+        model_family: str = "LFM2-24B-A2B",
         quantization: str = "Q4_K_M",
         n_ctx: int = 2048,
         n_gpu_layers: int = -1,
@@ -1278,16 +1278,16 @@ _transformer_instance = None
 def get_transformer(
     quantization: str = "Q4_K_M",
     model_path: Optional[str] = None,
-    model_family: str = "llama_70b",
+    model_family: str = "Llama-3.3-70B-Instruct",
     n_ctx: int = 2048,
     n_gpu_layers: int = -1,
     n_batch: int = 512,
 ):
     """Get or create the transformer singleton.
 
-    Uses LlamaTransformer (in-process llama-cpp-python) for llama_70b,
+    Uses LlamaTransformer (in-process llama-cpp-python) for Llama-3.3-70B-Instruct,
     and LlamaServerTransformer (external llama-server subprocess) for
-    server-based families (lfm2_24b, qwen_32b, mistral_24b, custom).
+    server-based families (LFM2-24B-A2B, Qwen2.5-32B-Instruct, Mistral-Small-3.1-24B-Instruct, custom).
 
     For model_family="custom", MODEL_PATH is required.
     """
@@ -1365,9 +1365,9 @@ def main():
     )
     parser.add_argument(
         "--model-family", "-f",
-        default="llama_70b",
+        default="Llama-3.3-70B-Instruct",
         choices=list(MODEL_FAMILIES.keys()),
-        help="Model family (default: llama_70b). Use 'custom' with --model-path for any GGUF."
+        help="Model family (default: Llama-3.3-70B-Instruct). Use 'custom' with --model-path for any GGUF."
     )
     parser.add_argument(
         "--quant", "-q",

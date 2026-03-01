@@ -13,14 +13,14 @@ echo ParleyAI - Local Chat
 echo.
 echo Usage:
 echo   .\start_windows.bat                Start with defaults
-echo   set MODEL_FAMILY=lfm2_24b          Use LFM2 model
+echo   set MODEL_FAMILY=LFM2-24B-A2B          Use LFM2 model
 echo   set TUNNEL=on                       Expose over the internet
 echo.
 echo Environment variables:
 echo.
 echo   Model
-echo     MODEL_FAMILY    Model family to use               (default: llama_70b)
-echo                     Options: llama_70b, lfm2_24b, qwen_32b, mistral_24b, custom
+echo     MODEL_FAMILY    Model family to use               (default: Llama-3.3-70B-Instruct)
+echo                     Options: Llama-3.3-70B-Instruct, LFM2-24B-A2B, Qwen2.5-32B-Instruct, Mistral-Small-3.1-24B-Instruct, custom
 echo     QUANT           Quantization level               (default: Q4_K_M)
 echo     CTX             Context window in tokens          (default: 2048)
 echo     MODEL_PATH      Path to GGUF file or directory    (default: auto-download)
@@ -41,18 +41,18 @@ echo.
 echo Examples:
 echo.
 echo   :: LFM2-24B on 32GB machine
-echo   set MODEL_FAMILY=lfm2_24b
+echo   set MODEL_FAMILY=LFM2-24B-A2B
 echo   set QUANT=Q4_K_M
 echo   .\start_windows.bat
 echo.
 echo   :: Qwen2.5-32B - strong creative writing / JSON
-echo   set MODEL_FAMILY=qwen_32b
+echo   set MODEL_FAMILY=Qwen2.5-32B-Instruct
 echo   set QUANT=Q5_K_M
 echo   set CTX=8192
 echo   .\start_windows.bat
 echo.
 echo   :: Mistral Small 3.1 24B
-echo   set MODEL_FAMILY=mistral_24b
+echo   set MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct
 echo   set QUANT=Q6_K
 echo   .\start_windows.bat
 echo.
@@ -88,7 +88,7 @@ echo ========================================
 echo.
 
 :: Set defaults if not provided
-if "%MODEL_FAMILY%"=="" set MODEL_FAMILY=llama_70b
+if "%MODEL_FAMILY%"=="" set MODEL_FAMILY=Llama-3.3-70B-Instruct
 if "%QUANT%"=="" set QUANT=Q4_K_M
 if "%CTX%"=="" set CTX=2048
 if "%GPU_LAYERS%"=="" set GPU_LAYERS=-1
@@ -112,9 +112,9 @@ echo.
 
 :: Server-based model families require llama-server
 set "_NEEDS_SERVER=0"
-if /i "%MODEL_FAMILY%"=="lfm2_24b" set "_NEEDS_SERVER=1"
-if /i "%MODEL_FAMILY%"=="qwen_32b" set "_NEEDS_SERVER=1"
-if /i "%MODEL_FAMILY%"=="mistral_24b" set "_NEEDS_SERVER=1"
+if /i "%MODEL_FAMILY%"=="LFM2-24B-A2B" set "_NEEDS_SERVER=1"
+if /i "%MODEL_FAMILY%"=="Qwen2.5-32B-Instruct" set "_NEEDS_SERVER=1"
+if /i "%MODEL_FAMILY%"=="Mistral-Small-3.1-24B-Instruct" set "_NEEDS_SERVER=1"
 if /i "%MODEL_FAMILY%"=="custom" set "_NEEDS_SERVER=1"
 if "%_NEEDS_SERVER%"=="1" (
     where llama-server >nul 2>&1

@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 
 # Configuration from environment
-MODEL_FAMILY = os.getenv("MODEL_FAMILY", "llama_70b")
+MODEL_FAMILY = os.getenv("MODEL_FAMILY", "Llama-3.3-70B-Instruct")
 QUANT = os.getenv("QUANT", "Q4_K_M")
 MODEL_PATH_ENV = os.getenv("MODEL_PATH", None)
 CTX = int(os.getenv("CTX", "2048"))
@@ -95,8 +95,8 @@ def resolve_model_path(path_env: str | None, quant: str, model_family: str) -> s
     """Resolve model path from environment variable.
     
     Search order for directories:
-      1. {path}/{model_family}/{quant}/  (e.g. ~/local-llms/qwen_32b/Q5_K_M/)
-      2. {path}/{model_family}/          (e.g. ~/local-llms/qwen_32b/)
+      1. {path}/{model_family}/{quant}/  (e.g. ~/local-llms/Qwen2.5-32B-Instruct/Q5_K_M/)
+      2. {path}/{model_family}/          (e.g. ~/local-llms/Qwen2.5-32B-Instruct/)
       3. {path}/                         (e.g. ~/local-llms/)
     At each level: exact filename > split first part > variant > sole GGUF.
     """
