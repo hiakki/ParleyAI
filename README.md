@@ -263,10 +263,13 @@ set BATCH_SIZE=512
 ```
 ```powershell
 # Windows (PowerShell)
+$env:MODEL_PATH='C:\Users\root\Downloads\local-llms'
 $env:MODEL_FAMILY='Qwen2.5-32B-Instruct'
 $env:QUANT='Q5_K_M'
 $env:CTX='8192'
-$env:BATCH_SIZE='512'
+$env:GPU_LAYERS='20'
+$env:LFM_IDLE_TIMEOUT='30'
+$env:TUNNEL='on'
 .\start_windows.bat
 ```
 > Why: Qwen2.5-32B has the best creative vocabulary and JSON adherence. CTX=8192 gives room for long scene descriptions + structured output. Q5_K_M is the sweet spot for 32GB.
