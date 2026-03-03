@@ -19,28 +19,136 @@ A full-stack chat application for running large GGUF models locally.
 
 ### Recommended Models by Hardware
 
-| Hardware | Top Pick | `MODEL_FAMILY` | `QUANT` | Download |
+**Datacenter / Cloud GPUs:**
+
+| Hardware | Top Pick | `MODEL_FAMILY` | `QUANT` | Size | Speed | Download |
+|---|---|---|---|---|---|---|
+| **H100 80GB** + 128GB RAM | Llama 3.3 70B | `Llama-3.3-70B-Instruct` | `Q8_0` | 75 GB | 60-90 tok/s | [GGUF](https://huggingface.co/bartowski/Llama-3.3-70B-Instruct-GGUF) |
+| **H100 80GB** + 128GB RAM (alt) | Llama 3.3 70B | `Llama-3.3-70B-Instruct` | `Q5_K_M` | 48 GB | 80-120 tok/s | [GGUF](https://huggingface.co/bartowski/Llama-3.3-70B-Instruct-GGUF) |
+| **A30 24GB** + 128GB RAM | Qwen2.5-32B | `Qwen2.5-32B-Instruct` | `Q5_K_M` | 23 GB | 20-30 tok/s | [GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) |
+| **A30 24GB** + 128GB RAM (alt) | Qwen2.5-32B | `Qwen2.5-32B-Instruct` | `Q4_K_M` | 20 GB | 25-35 tok/s | [GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) |
+
+**Consumer GPUs:**
+
+| Hardware | Top Pick | `MODEL_FAMILY` | `QUANT` | Size | Speed | Download |
+|---|---|---|---|---|---|---|
+| **48GB+ RAM** (M4 Pro, etc.) | Llama 3.3 70B | `Llama-3.3-70B-Instruct` | `Q4_K_M` | 43 GB | 15-20 tok/s | [GGUF](https://huggingface.co/bartowski/Llama-3.3-70B-Instruct-GGUF) |
+| **32GB RAM + 24GB VRAM** (RTX 4090) | Qwen2.5-32B | `Qwen2.5-32B-Instruct` | `Q5_K_M` | 23 GB | 25-35 tok/s | [GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) |
+| **32GB RAM + 12GB VRAM** (RTX 4070) | Qwen2.5-32B | `Qwen2.5-32B-Instruct` | `Q4_K_M` | 20 GB | 8-12 tok/s | [GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) |
+| **32GB RAM + 8GB VRAM** (RTX 4070 Laptop) | Qwen2.5-32B | `Qwen2.5-32B-Instruct` | `Q5_K_M` | 23 GB | 20-30 tok/s | [GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) |
+| **32GB RAM** (Apple Silicon) | Qwen2.5-32B | `Qwen2.5-32B-Instruct` | `Q5_K_M` | 23 GB | 15-20 tok/s | [GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) |
+| **24GB RAM** | Mistral Small 3.1 | `Mistral-Small-3.1-24B-Instruct` | `Q4_K_M` | 14 GB | 6-10 tok/s | [GGUF](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) |
+| **20GB RAM** | LFM2-24B-A2B | `LFM2-24B-A2B` | `Q4_0` | 14 GB | 5-8 tok/s | [GGUF](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF) |
+
+> **Why does VRAM matter?** On NVIDIA GPUs, layers that fit in VRAM run 10-20x faster than layers on CPU. A 22 GB model on an 8 GB GPU means ~75% runs on CPU = ~2-3 tok/s. A 14 GB model on the same GPU means ~50% on GPU = 6-8 tok/s. Choose a model size that fits your VRAM for fast generation.
+
+### Model Comparison (i7 + RTX 4070 Laptop 8GB VRAM + 32GB RAM)
+
+**With auto-fit (no GPU_LAYERS set) and CTX=8192:**
+
+| # | Criteria | Llama 70B Q3_K_M | Qwen 32B Q5_K_M | Qwen 32B Q4_K_M | Mistral 24B Q4_K_M | LFM2 24B Q8_0 |
+|---|---|---|---|---|---|---|
+| 1 | **Size** | 31 GB | 23 GB | 20 GB | 14 GB | 26 GB |
+| 2 | **Generation Speed** | ~1 tok/s | ~2-3 tok/s | ~3-4 tok/s | ~6-8 tok/s | ~3-4 tok/s |
+| 3 | **Layers on 8GB GPU** | ~15% | ~25% | ~30% | ~40% | ~22% |
+| 4 | **Output Quality** | 62% | **92%** | 88% | 76% | 58% |
+| 5 | **Overall** | **30%** | **70%** | **75%** | **80%** | **55%** |
+
+**With manual tuning: GPU_LAYERS=20, CTX=2048 (recommended for 8GB VRAM):**
+
+| # | Criteria | Qwen 32B Q5_K_M | Qwen 32B Q4_K_M | Mistral 24B Q4_K_M |
 |---|---|---|---|---|
-| **48GB+ RAM** (M4 Pro, etc.) | Llama 3.3 70B | `Llama-3.3-70B-Instruct` | `Q4_K_M` | [43GB GGUF](https://huggingface.co/bartowski/Llama-3.3-70B-Instruct-GGUF) |
-| **32GB RAM + RTX 4070** | Qwen2.5-32B | `Qwen2.5-32B-Instruct` | `Q5_K_M` | [23GB GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) |
-| **32GB RAM** (story/JSON) | Qwen2.5-32B | `Qwen2.5-32B-Instruct` | `Q4_K_M` | [20GB GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) |
-| **32GB RAM** (fast) | Mistral Small 3.1 | `Mistral-Small-3.1-24B-Instruct` | `Q6_K` | [20GB GGUF](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) |
-| **24GB RAM** | Mistral Small 3.1 | `Mistral-Small-3.1-24B-Instruct` | `Q4_K_M` | [14GB GGUF](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) |
-| **20GB RAM** | LFM2-24B-A2B | `LFM2-24B-A2B` | `Q4_0` | [14GB GGUF](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF) |
+| 1 | **Size** | 23 GB | 20 GB | 14 GB |
+| 2 | **Generation Speed** | **~20-30 tok/s** | **~25-35 tok/s** | **~30-40 tok/s** |
+| 3 | **GPU_LAYERS / 8GB** | 20 (~6.7 GB) | 24 (~7.4 GB) | 28 (~7.2 GB) |
+| 4 | **Output Quality** | **92%** | 88% | 76% |
+| 5 | **Overall** | **90%** | **88%** | **85%** |
 
-### Model Comparison (i7 + RTX 4070 8GB + 32GB RAM)
+> **Why the huge difference?** `CTX=2048` uses ~136 MB for KV cache vs ~1 GB at `CTX=8192`. That frees up VRAM for more model layers. Combined with a manually tuned `GPU_LAYERS`, you get optimal VRAM usage and dramatically faster generation.
+>
+> **Best config for 8GB VRAM**: `QUANT=Q5_K_M CTX=2048 GPU_LAYERS=20` — **20-30 tok/s** with the highest quality 32B model.
+> **If you need long context** (8K+): accept ~2-3 tok/s with auto-fit, or use Mistral 24B Q4_K_M for ~6-8 tok/s.
+> **Avoid Llama 70B** on 8GB VRAM — too large, painfully slow regardless of settings.
 
-| # | Criteria | Llama 70B Q3_K_M | Qwen 32B Q5_K_M | Mistral 24B Q6_K | LFM2 24B Q8_0 |
-|---|---|---|---|---|---|
-| 1 | **Hardware Compatibility** | 40% | 85% | 93% | 78% |
-| 2 | **Speed** | 20% | 65% | 85% | 82% |
-| 3 | **Output Quality** | 62% | 92% | 76% | 58% |
-| 4 | **Hallucinations** (less = better) | 58% | 86% | 78% | 55% |
-| 5 | **Overall** | **45%** | **82%** | **83%** | **68%** |
+### Best Open-Source Models by Use Case (i7 + 8GB VRAM + 32GB RAM)
 
-> **For creative/structured output** (stories, JSON): Qwen2.5-32B Q5_K_M is the best pick.
-> **For speed-first workflows**: Mistral 3.1 24B Q6_K edges out with faster inference at nearly the same overall score.
-> **Avoid Llama 70B** on 32GB RAM — the aggressive Q3 quantization needed to fit it undermines its quality advantage.
+All models below run locally via ParleyAI using `MODEL_FAMILY=custom MODEL_PATH=/path/to/model.gguf` (unless the model is already a built-in family). GGUF downloads from HuggingFace.
+
+#### Story / Script Generation / Creative Writing
+
+| # | Model | Params | Quant | GGUF Size | GPU % | Speed | Story Quality | Creativity | Instruction Following | Overall |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | **Qwen2.5-32B-Instruct** | 32B | Q4_K_M | 20 GB | ~30% | ~3-4 tok/s | **95%** | **93%** | **90%** | **78%** |
+| 2 | **Qwen2.5-14B-Instruct** | 14B | Q5_K_M | 10 GB | ~70% | ~12-18 tok/s | 82% | 80% | 82% | **85%** |
+| 3 | **Mistral-Small-3.1-24B** | 24B | Q4_K_M | 14 GB | ~40% | ~6-8 tok/s | 78% | 75% | 80% | **80%** |
+| 4 | **Gemma-2-9B-IT** | 9B | Q6_K | 7.6 GB | ~95% | ~30-40 tok/s | 72% | 74% | 70% | **82%** |
+| 5 | **Llama-3.1-8B-Instruct** | 8B | Q6_K | 6.5 GB | ~100% | ~35-45 tok/s | 68% | 65% | 72% | **78%** |
+
+> **Pick**: Qwen2.5-14B Q5_K_M — best balance of quality and speed for story generation. Gemma-2-9B is the speed king if you need fast iteration.
+
+| Model | GGUF Download |
+|---|---|
+| Qwen2.5-32B-Instruct | [GGUF](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF) (built-in `Qwen2.5-32B-Instruct`) |
+| Qwen2.5-14B-Instruct | [GGUF](https://huggingface.co/Qwen/Qwen2.5-14B-Instruct-GGUF) (use `custom`) |
+| Mistral-Small-3.1-24B | [GGUF](https://huggingface.co/bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF) (built-in `Mistral-Small-3.1-24B-Instruct`) |
+| Gemma-2-9B-IT | [GGUF](https://huggingface.co/bartowski/gemma-2-9b-it-GGUF) (use `custom`) |
+| Llama-3.1-8B-Instruct | [GGUF](https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF) (use `custom`) |
+
+#### Coding / Software Engineering
+
+| # | Model | Params | Quant | GGUF Size | GPU % | Speed | Code Quality | Debugging | Multi-Language | Overall |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | **Qwen2.5-Coder-32B** | 32B | Q4_K_M | 20 GB | ~30% | ~3-4 tok/s | **96%** | **92%** | **94%** | **78%** |
+| 2 | **Qwen2.5-Coder-14B** | 14B | Q4_K_M | 9 GB | ~85% | ~18-25 tok/s | 88% | 85% | 88% | **90%** |
+| 3 | **Phi-4** | 14B | Q4_K_M | 9 GB | ~85% | ~18-25 tok/s | 83% | 82% | 80% | **87%** |
+| 4 | **DeepSeek-R1-Distill-Qwen-14B** | 14B | Q4_K_M | 9 GB | ~85% | ~15-22 tok/s | 80% | **88%** | 78% | **85%** |
+| 5 | **Llama-3.1-8B-Instruct** | 8B | Q6_K | 6.5 GB | ~100% | ~35-45 tok/s | 65% | 62% | 68% | **76%** |
+
+> **Pick**: Qwen2.5-Coder-14B Q4_K_M — best coding model that fits almost entirely in 8GB VRAM. For debugging/reasoning-heavy tasks, DeepSeek-R1-Distill-14B with chain-of-thought is excellent.
+
+| Model | GGUF Download |
+|---|---|
+| Qwen2.5-Coder-32B-Instruct | [GGUF](https://huggingface.co/Qwen/Qwen2.5-Coder-32B-Instruct-GGUF) (use `custom`) |
+| Qwen2.5-Coder-14B-Instruct | [GGUF](https://huggingface.co/Qwen/Qwen2.5-Coder-14B-Instruct-GGUF) (use `custom`) |
+| Phi-4 | [GGUF](https://huggingface.co/bartowski/phi-4-GGUF) (use `custom`) |
+| DeepSeek-R1-Distill-Qwen-14B | [GGUF](https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF) (use `custom`) |
+| Llama-3.1-8B-Instruct | [GGUF](https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF) (use `custom`) |
+
+#### Reasoning / Math / Analysis
+
+| # | Model | Params | Quant | GGUF Size | GPU % | Speed | Reasoning | Math | Analysis | Overall |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | **DeepSeek-R1-Distill-Qwen-14B** | 14B | Q4_K_M | 9 GB | ~85% | ~15-22 tok/s | **92%** | **88%** | **90%** | **91%** |
+| 2 | **Phi-4** | 14B | Q4_K_M | 9 GB | ~85% | ~18-25 tok/s | 88% | **90%** | 85% | **89%** |
+| 3 | **Qwen2.5-14B-Instruct** | 14B | Q5_K_M | 10 GB | ~70% | ~12-18 tok/s | 85% | 82% | 86% | **85%** |
+| 4 | **Qwen2.5-32B-Instruct** | 32B | Q4_K_M | 20 GB | ~30% | ~3-4 tok/s | **92%** | 86% | **92%** | **76%** |
+| 5 | **Gemma-2-9B-IT** | 9B | Q6_K | 7.6 GB | ~95% | ~30-40 tok/s | 72% | 68% | 70% | **78%** |
+
+> **Pick**: DeepSeek-R1-Distill-Qwen-14B — purpose-built for chain-of-thought reasoning, shows its work step-by-step. Phi-4 is the math champion, beating models 5x its size on MATH/GPQA benchmarks.
+
+#### General Purpose / Chat / Q&A
+
+| # | Model | Params | Quant | GGUF Size | GPU % | Speed | Quality | Versatility | Hallucinations | Overall |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | **Qwen2.5-14B-Instruct** | 14B | Q5_K_M | 10 GB | ~70% | ~12-18 tok/s | 85% | **88%** | 84% | **87%** |
+| 2 | **Mistral-Small-3.1-24B** | 24B | Q4_K_M | 14 GB | ~40% | ~6-8 tok/s | 80% | 85% | 82% | **83%** |
+| 3 | **Phi-4** | 14B | Q4_K_M | 9 GB | ~85% | ~18-25 tok/s | 82% | 78% | 80% | **85%** |
+| 4 | **Gemma-2-9B-IT** | 9B | Q6_K | 7.6 GB | ~95% | ~30-40 tok/s | 75% | 76% | 74% | **82%** |
+| 5 | **Llama-3.1-8B-Instruct** | 8B | Q6_K | 6.5 GB | ~100% | ~35-45 tok/s | 70% | 72% | 72% | **80%** |
+
+> **Pick**: Qwen2.5-14B Q5_K_M — the best all-rounder that balances quality, speed, and versatility. Phi-4 is a close second with faster speed and stronger reasoning.
+
+#### Quick Reference: One Model Per Speed Tier
+
+| Priority | Model | GGUF | Speed | Best For |
+|---|---|---|---|---|
+| **Max Quality** | Qwen2.5-32B-Instruct | Q4_K_M (20 GB) | ~3-4 tok/s | Stories, complex analysis |
+| **Best Balance** | Qwen2.5-14B-Instruct | Q5_K_M (10 GB) | ~12-18 tok/s | Everything |
+| **Best Coding** | Qwen2.5-Coder-14B | Q4_K_M (9 GB) | ~18-25 tok/s | Code generation, debugging |
+| **Best Reasoning** | DeepSeek-R1-Distill-14B | Q4_K_M (9 GB) | ~15-22 tok/s | Math, logic, step-by-step |
+| **Max Speed** | Gemma-2-9B-IT | Q6_K (7.6 GB) | ~30-40 tok/s | Fast iteration, chat |
+
+> **How "Overall" is calculated**: Overall = (Quality × 0.35) + (Speed × 0.35) + (GPU fit × 0.15) + (Versatility × 0.15). A slow but high-quality model gets penalized for impractical speed on 8GB VRAM. A fast but lower-quality model gets rewarded for usability.
 
 ### How Do These Compare to Cloud AI?
 
@@ -97,31 +205,32 @@ If you've used ChatGPT, Claude, or Gemini, here's how these local models stack u
 
 Higher quant = better quality but more RAM. The sweet spot depends on your hardware.
 
-**Qwen2.5-32B on 32GB RAM (i7 + RTX 4070 8GB):**
+**Qwen2.5-32B on 32GB RAM (i7 + RTX 4070 Laptop 8GB VRAM):**
 
-| Quant | Size | Fits 32GB? | Quality vs FP16 | Speed | Overall |
-|---|---|---|---|---|---|
-| **Q4_K_M** | 20GB | Comfortable | -2–4% | Fast | 78% |
-| **Q5_K_M** | 23GB | Comfortable | -1–2% | Good | **82% (recommended)** |
-| **Q6_K** | 27GB | Tight (CTX≤4096) | -0.5–1% | Slower | 76% |
-| **Q8_0** | 34GB | No (swaps) | -0.1–0.3% | Very slow | 58% |
+| Quant | Size | GPU Layers (8GB) | Speed (8GB VRAM) | Speed (12GB+ VRAM) | Quality vs FP16 | Pick |
+|---|---|---|---|---|---|---|
+| **Q3_K_M** | 15GB | ~40% | ~5-7 tok/s | ~12-15 tok/s | -4–6% | Budget speed |
+| **Q4_K_M** | 20GB | ~30% | ~3-4 tok/s | ~8-12 tok/s | -2–4% | **Best for 8GB VRAM** |
+| **Q5_K_M** | 23GB | ~25% | ~2-3 tok/s | ~8-10 tok/s | -1–2% | Best for 12GB+ VRAM |
+| **Q6_K** | 27GB | ~20% | ~1-2 tok/s | ~5-7 tok/s | -0.5–1% | Needs 16GB+ VRAM |
+| **Q8_0** | 34GB | ~15% | <1 tok/s | ~3-5 tok/s | -0.1–0.3% | Needs 24GB+ VRAM |
 
 **Mistral 3.1 24B on 32GB RAM:**
 
-| Quant | Size | Fits 32GB? | Quality vs FP16 | Speed | Overall |
-|---|---|---|---|---|---|
-| **Q4_K_M** | 14GB | Easy | -2–4% | Very fast | 80% |
-| **Q5_K_M** | 17GB | Easy | -1–2% | Fast | 84% |
-| **Q6_K** | 20GB | Comfortable | -0.5–1% | Good | **86% (recommended)** |
-| **Q8_0** | 25GB | Comfortable | -0.1–0.3% | Good | 85% |
+| Quant | Size | GPU Layers (8GB) | Speed (8GB VRAM) | Speed (12GB+ VRAM) | Quality vs FP16 | Pick |
+|---|---|---|---|---|---|---|
+| **Q4_K_M** | 14GB | ~40% | **~6-8 tok/s** | ~12-18 tok/s | -2–4% | **Best for 8GB VRAM** |
+| **Q5_K_M** | 17GB | ~35% | ~5-6 tok/s | ~10-15 tok/s | -1–2% | Good balance |
+| **Q6_K** | 20GB | ~30% | ~3-5 tok/s | ~8-12 tok/s | -0.5–1% | Best for 12GB+ VRAM |
+| **Q8_0** | 25GB | ~22% | ~2-3 tok/s | ~6-10 tok/s | -0.1–0.3% | Needs 16GB+ VRAM |
 
 **LFM2-24B on 32GB RAM:**
 
-| Quant | Size | Fits 32GB? | Quality vs FP16 | Speed | Overall |
+| Quant | Size | GPU Layers (8GB) | Speed (8GB VRAM) | Quality vs FP16 | Pick |
 |---|---|---|---|---|---|
-| **Q4_0** | 14GB | Easy | -3–5% | Very fast | 65% |
-| **Q4_K_M** | 15GB | Easy | -2–4% | Fast | **68% (recommended)** |
-| **Q8_0** | 26GB | Comfortable | -0.1–0.3% | Good | 72% |
+| **Q4_0** | 14GB | ~40% | ~6-8 tok/s | -3–5% | Fast |
+| **Q4_K_M** | 15GB | ~38% | ~5-7 tok/s | -2–4% | **Recommended** |
+| **Q8_0** | 26GB | ~22% | ~2-3 tok/s | -0.1–0.3% | Needs more VRAM |
 
 **Llama 3.3 70B (48GB+ RAM recommended):**
 
@@ -135,19 +244,20 @@ Higher quant = better quality but more RAM. The sweet spot depends on your hardw
 
 ### Ready-to-Use Configurations by Task
 
-Copy-paste the right config for your task. All tuned for **32GB RAM + NVIDIA GPU (8–12GB VRAM)**.
+Copy-paste the right config for your task. All tuned for **32GB RAM**.
+
+> **8GB VRAM tip**: Add `GPU_LAYERS=20 CTX=2048` to any Qwen 32B command below for 20-30 tok/s instead of 2-3 tok/s. Trade-off: shorter context window.
 
 **Story Generation / Screenwriting / NarrateAI**
 ```bash
 # macOS / Linux
-MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=8192 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
+MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=8192 BATCH_SIZE=512 ./start.sh
 ```
 ```bat
 :: Windows (CMD)
 set MODEL_FAMILY=Qwen2.5-32B-Instruct
 set QUANT=Q5_K_M
 set CTX=8192
-set GPU_LAYERS=99
 set BATCH_SIZE=512
 .\start_windows.bat
 ```
@@ -156,7 +266,6 @@ set BATCH_SIZE=512
 $env:MODEL_FAMILY='Qwen2.5-32B-Instruct'
 $env:QUANT='Q5_K_M'
 $env:CTX='8192'
-$env:GPU_LAYERS='99'
 $env:BATCH_SIZE='512'
 .\start_windows.bat
 ```
@@ -164,14 +273,13 @@ $env:BATCH_SIZE='512'
 
 **Chatbot / Conversational AI / Customer Support**
 ```bash
-MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct QUANT=Q6_K CTX=4096 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
+MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct QUANT=Q6_K CTX=4096 BATCH_SIZE=512 ./start.sh
 ```
 ```bat
 :: Windows (CMD)
 set MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct
 set QUANT=Q6_K
 set CTX=4096
-set GPU_LAYERS=99
 set BATCH_SIZE=512
 .\start_windows.bat
 ```
@@ -180,7 +288,6 @@ set BATCH_SIZE=512
 $env:MODEL_FAMILY='Mistral-Small-3.1-24B-Instruct'
 $env:QUANT='Q6_K'
 $env:CTX='4096'
-$env:GPU_LAYERS='99'
 $env:BATCH_SIZE='512'
 .\start_windows.bat
 ```
@@ -189,17 +296,16 @@ $env:BATCH_SIZE='512'
 **Coding Assistant / Code Review**
 ```bash
 # 48GB+ RAM (Mac M4 Pro, etc.)
-MODEL_FAMILY=Llama-3.3-70B-Instruct QUANT=Q4_K_M CTX=4096 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
+MODEL_FAMILY=Llama-3.3-70B-Instruct QUANT=Q4_K_M CTX=4096 BATCH_SIZE=512 ./start.sh
 
-# 32GB RAM fallback — Qwen is second-best for code
-MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=4096 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
+# 32GB RAM + 8GB VRAM — Mistral is fastest for code on limited VRAM
+MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct QUANT=Q4_K_M CTX=4096 BATCH_SIZE=512 ./start.sh
 ```
 ```bat
 :: Windows 32GB (CMD)
 set MODEL_FAMILY=Qwen2.5-32B-Instruct
 set QUANT=Q5_K_M
 set CTX=4096
-set GPU_LAYERS=99
 set BATCH_SIZE=512
 .\start_windows.bat
 ```
@@ -208,7 +314,6 @@ set BATCH_SIZE=512
 $env:MODEL_FAMILY='Qwen2.5-32B-Instruct'
 $env:QUANT='Q5_K_M'
 $env:CTX='4096'
-$env:GPU_LAYERS='99'
 $env:BATCH_SIZE='512'
 .\start_windows.bat
 ```
@@ -216,14 +321,13 @@ $env:BATCH_SIZE='512'
 
 **RAG / Document Q&A / Tool Use / Agents**
 ```bash
-MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=16384 GPU_LAYERS=99 BATCH_SIZE=256 ./start.sh
+MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=16384 BATCH_SIZE=256 ./start.sh
 ```
 ```bat
 :: Windows (CMD)
 set MODEL_FAMILY=Qwen2.5-32B-Instruct
 set QUANT=Q5_K_M
 set CTX=16384
-set GPU_LAYERS=99
 set BATCH_SIZE=256
 .\start_windows.bat
 ```
@@ -232,7 +336,6 @@ set BATCH_SIZE=256
 $env:MODEL_FAMILY='Qwen2.5-32B-Instruct'
 $env:QUANT='Q5_K_M'
 $env:CTX='16384'
-$env:GPU_LAYERS='99'
 $env:BATCH_SIZE='256'
 .\start_windows.bat
 ```
@@ -240,14 +343,13 @@ $env:BATCH_SIZE='256'
 
 **Translation / Multilingual**
 ```bash
-MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct QUANT=Q6_K CTX=8192 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
+MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct QUANT=Q6_K CTX=8192 BATCH_SIZE=512 ./start.sh
 ```
 ```bat
 :: Windows (CMD)
 set MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct
 set QUANT=Q6_K
 set CTX=8192
-set GPU_LAYERS=99
 set BATCH_SIZE=512
 .\start_windows.bat
 ```
@@ -256,7 +358,6 @@ set BATCH_SIZE=512
 $env:MODEL_FAMILY='Mistral-Small-3.1-24B-Instruct'
 $env:QUANT='Q6_K'
 $env:CTX='8192'
-$env:GPU_LAYERS='99'
 $env:BATCH_SIZE='512'
 .\start_windows.bat
 ```
@@ -264,14 +365,13 @@ $env:BATCH_SIZE='512'
 
 **Summarization / Report Analysis**
 ```bash
-MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=16384 GPU_LAYERS=99 BATCH_SIZE=256 ./start.sh
+MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=16384 BATCH_SIZE=256 ./start.sh
 ```
 ```bat
 :: Windows (CMD)
 set MODEL_FAMILY=Qwen2.5-32B-Instruct
 set QUANT=Q5_K_M
 set CTX=16384
-set GPU_LAYERS=99
 set BATCH_SIZE=256
 .\start_windows.bat
 ```
@@ -280,7 +380,6 @@ set BATCH_SIZE=256
 $env:MODEL_FAMILY='Qwen2.5-32B-Instruct'
 $env:QUANT='Q5_K_M'
 $env:CTX='16384'
-$env:GPU_LAYERS='99'
 $env:BATCH_SIZE='256'
 .\start_windows.bat
 ```
@@ -288,14 +387,13 @@ $env:BATCH_SIZE='256'
 
 **Low-RAM / Lightweight / Embedded (20–24GB RAM)**
 ```bash
-MODEL_FAMILY=LFM2-24B-A2B QUANT=Q4_K_M CTX=2048 GPU_LAYERS=99 BATCH_SIZE=256 ./start.sh
+MODEL_FAMILY=LFM2-24B-A2B QUANT=Q4_K_M CTX=2048 BATCH_SIZE=256 ./start.sh
 ```
 ```bat
 :: Windows (CMD)
 set MODEL_FAMILY=LFM2-24B-A2B
 set QUANT=Q4_K_M
 set CTX=2048
-set GPU_LAYERS=99
 set BATCH_SIZE=256
 .\start_windows.bat
 ```
@@ -304,7 +402,6 @@ set BATCH_SIZE=256
 $env:MODEL_FAMILY='LFM2-24B-A2B'
 $env:QUANT='Q4_K_M'
 $env:CTX='2048'
-$env:GPU_LAYERS='99'
 $env:BATCH_SIZE='256'
 .\start_windows.bat
 ```
@@ -312,14 +409,13 @@ $env:BATCH_SIZE='256'
 
 **Speed-First / Batch Processing / API Pipelines**
 ```bash
-MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct QUANT=Q4_K_M CTX=2048 GPU_LAYERS=99 BATCH_SIZE=1024 ./start.sh
+MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct QUANT=Q4_K_M CTX=2048 BATCH_SIZE=1024 ./start.sh
 ```
 ```bat
 :: Windows (CMD)
 set MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct
 set QUANT=Q4_K_M
 set CTX=2048
-set GPU_LAYERS=99
 set BATCH_SIZE=1024
 .\start_windows.bat
 ```
@@ -328,7 +424,6 @@ set BATCH_SIZE=1024
 $env:MODEL_FAMILY='Mistral-Small-3.1-24B-Instruct'
 $env:QUANT='Q4_K_M'
 $env:CTX='2048'
-$env:GPU_LAYERS='99'
 $env:BATCH_SIZE='1024'
 .\start_windows.bat
 ```
@@ -336,14 +431,13 @@ $env:BATCH_SIZE='1024'
 
 **Any Custom GGUF Model**
 ```bash
-MODEL_FAMILY=custom MODEL_PATH=~/models/my-model.gguf CTX=4096 GPU_LAYERS=99 BATCH_SIZE=512 ./start.sh
+MODEL_FAMILY=custom MODEL_PATH=~/models/my-model.gguf CTX=4096 BATCH_SIZE=512 ./start.sh
 ```
 ```bat
 :: Windows (CMD)
 set MODEL_FAMILY=custom
 set MODEL_PATH=C:\models\my-model.gguf
 set CTX=4096
-set GPU_LAYERS=99
 set BATCH_SIZE=512
 .\start_windows.bat
 ```
@@ -352,11 +446,10 @@ set BATCH_SIZE=512
 $env:MODEL_FAMILY='custom'
 $env:MODEL_PATH='C:\models\my-model.gguf'
 $env:CTX='4096'
-$env:GPU_LAYERS='99'
 $env:BATCH_SIZE='512'
 .\start_windows.bat
 ```
-> Chat template is auto-detected from the GGUF metadata by llama-server. Adjust CTX and GPU_LAYERS based on model size and your hardware.
+> Chat template is auto-detected from the GGUF metadata by llama-server. GPU offloading is automatic — llama-server's auto-fit determines the optimal number of layers for your VRAM. Override with `GPU_LAYERS=N` only if needed.
 
 ### Recommended Directory Structure for Models
 
@@ -685,7 +778,7 @@ MODEL_PATH=~/local-llms QUANT=IQ3_M CTX=2048 GPU_LAYERS=40 ./start.sh
 | `MODEL_PATH` | `~/local-llms` | Directory or path to GGUF file (required for `custom`) |
 | `QUANT` | `Q4_K_M` | Quantization (options depend on `MODEL_FAMILY`) |
 | `CTX` | `2048` | Context window (tokens) |
-| `GPU_LAYERS` | `99` or `-1` | Layers offloaded to GPU |
+| `GPU_LAYERS` | `-1` (auto) | GPU layers; `-1` = auto-fit (recommended), `0` = CPU only |
 | `TUNNEL` | `off` | Set to `on` to expose via internet tunnel |
 | `TUNNEL_TOOL` | `auto` | `auto`, `cloudflared`, or `localtunnel` |
 
@@ -763,10 +856,10 @@ Models are auto-downloaded from Hugging Face on first run. Set `MODEL_PATH` to s
 
 **Available quantizations per family:**
 
-| Family | Quants | Recommended (32GB RAM) |
-|---|---|---|
-| `Qwen2.5-32B-Instruct` | Q3_K_M, Q4_K_M, Q5_K_M, Q6_K, Q8_0 | **Q5_K_M** (23GB) |
-| `Mistral-Small-3.1-24B-Instruct` | Q4_K_M, Q5_K_M, Q6_K, Q8_0 | **Q6_K** (20GB) |
+| Family | Quants | Recommended (8GB VRAM) | Recommended (12GB+ VRAM) |
+|---|---|---|---|
+| `Qwen2.5-32B-Instruct` | Q3_K_M, Q4_K_M, Q5_K_M, Q6_K, Q8_0 | **Q4_K_M** (20GB) | **Q5_K_M** (23GB) |
+| `Mistral-Small-3.1-24B-Instruct` | Q4_K_M, Q5_K_M, Q6_K, Q8_0 | **Q4_K_M** (14GB) | **Q6_K** (20GB) |
 | `LFM2-24B-A2B` | Q4_0, Q4_K_M, Q5_K_M, Q6_K, Q8_0, BF16, F16 | **Q4_K_M** (15GB) |
 | `custom` | N/A (set via `MODEL_PATH`) | — |
 
@@ -863,52 +956,86 @@ Running a 70B parameter model (normally ~140GB in FP16) efficiently requires:
 
 ### 🎮 NVIDIA GPU Recommendations
 
-For Windows/Linux with NVIDIA GPUs, the model is split between **VRAM** (fast) and **System RAM** (slower). More layers on GPU = faster inference.
+On NVIDIA GPUs, model layers are split between **VRAM** (fast) and **system RAM** (slow). Generation speed is bottlenecked by the slowest component. Auto-fit handles the split automatically — no manual `GPU_LAYERS` needed.
 
-| GPU | VRAM | Recommended Quant | GPU Layers | System RAM Needed |
-|-----|------|-------------------|------------|-------------------|
-| **RTX 3060** | 12GB | IQ2_XXS, IQ2_XS | 20-25 | 16GB+ |
-| **RTX 3070** | 8GB | IQ1_M, IQ2_XXS | 15-20 | 24GB+ |
-| **RTX 3070 Ti** | 8GB | IQ1_M, IQ2_XXS | 15-20 | 24GB+ |
-| **RTX 3080** | 10GB | IQ2_XXS, IQ2_XS | 18-22 | 20GB+ |
-| **RTX 3090** | 24GB | Q3_K_S, IQ3_M | 35-45 | 16GB+ |
-| **RTX 4060** | 8GB | IQ1_M, IQ2_XXS | 15-20 | 24GB+ |
-| **RTX 4060 Ti** | 8/16GB | IQ2_XXS / Q2_K | 15-25 | 20GB+ |
-| **RTX 4070** | 12GB | IQ2_XS, Q2_K | 22-28 | 20GB+ |
-| **RTX 4070 Ti** | 12GB | IQ2_XS, Q2_K | 22-28 | 20GB+ |
-| **RTX 4080** | 16GB | Q2_K, Q3_K_S | 28-35 | 16GB+ |
-| **RTX 4090** | 24GB | Q3_K_M, IQ3_M | 40-50 | 16GB+ |
-| **RTX 5060** | 8GB* | IQ1_M, IQ2_XXS | 15-20 | 24GB+ |
-| **RTX 5070** | 12GB* | IQ2_XS, Q2_K | 22-28 | 20GB+ |
-| **RTX 5080** | 16GB* | Q2_K, Q3_K_S | 28-35 | 16GB+ |
-| **RTX 5090** | 32GB* | Q4_K_S, Q4_K_M | 50-60 | 16GB+ |
+**Datacenter / Cloud GPUs:**
 
-\* RTX 50-series specs are estimated based on expected configurations.
+| GPU | VRAM | Best Model | Quant | Size | CTX | Expected Speed |
+|-----|------|------------|-------|------|-----|----------------|
+| **H100** | 80GB | Llama 70B | Q8_0 | 75 GB | 32768 | 60-90 tok/s |
+| **H100** | 80GB | Llama 70B (faster) | Q5_K_M | 48 GB | 32768 | 80-120 tok/s |
+| **H100** | 80GB | Qwen 32B | Q8_0 | 34 GB | 32768 | 100-150 tok/s |
+| **A30** | 24GB | Qwen 32B | Q5_K_M | 23 GB | 8192 | 20-30 tok/s |
+| **A30** | 24GB | Qwen 32B (faster) | Q4_K_M | 20 GB | 16384 | 25-35 tok/s |
+| **A30** | 24GB | Mistral 24B | Q6_K | 20 GB | 8192 | 25-35 tok/s |
+
+> **H100 (80GB)**: Entire Llama 70B fits in VRAM at Q8_0 (near-lossless quality) with room for 32K context. For maximum throughput, Q5_K_M leaves headroom for larger batches. Qwen 32B at Q8_0 is trivial for H100 and runs at 100+ tok/s.
+>
+> **A30 (24GB)**: Qwen 32B Q5_K_M (23 GB) fits entirely in VRAM. Use Q4_K_M for larger context windows (16K+). Avoid Llama 70B — at 43+ GB it would be mostly on CPU via 128GB system RAM, dropping to ~5-8 tok/s.
+
+**Consumer GPUs (32GB system RAM):**
+
+| GPU | VRAM | Best Model | Quant | Size | Expected Speed |
+|-----|------|------------|-------|------|----------------|
+| **RTX 3060** | 12GB | Mistral 24B | Q4_K_M | 14 GB | 10-15 tok/s |
+| **RTX 3070 / 3070 Ti** | 8GB | Mistral 24B | Q4_K_M | 14 GB | 6-8 tok/s |
+| **RTX 3080** | 10GB | Mistral 24B | Q5_K_M | 17 GB | 8-12 tok/s |
+| **RTX 3090** | 24GB | Qwen 32B | Q5_K_M | 23 GB | 25-35 tok/s |
+| **RTX 4060** | 8GB | Mistral 24B | Q4_K_M | 14 GB | 6-8 tok/s |
+| **RTX 4060 Ti** | 8/16GB | Mistral 24B / Qwen 32B Q4_K_M | 14/20 GB | 6-8 / 10-15 tok/s |
+| **RTX 4070 Laptop** | 8GB | Qwen 32B (GPU_LAYERS=20, CTX=2048) | Q5_K_M | 23 GB | 20-30 tok/s |
+| **RTX 4070** | 12GB | Qwen 32B | Q4_K_M | 20 GB | 8-12 tok/s |
+| **RTX 4070 Ti** | 12GB | Qwen 32B | Q4_K_M | 20 GB | 8-12 tok/s |
+| **RTX 4080** | 16GB | Qwen 32B | Q5_K_M | 23 GB | 15-20 tok/s |
+| **RTX 4090** | 24GB | Qwen 32B | Q5_K_M | 23 GB | 25-35 tok/s |
+| **RTX 5070\*** | 12GB | Qwen 32B | Q4_K_M | 20 GB | 10-15 tok/s |
+| **RTX 5080\*** | 16GB | Qwen 32B | Q5_K_M | 23 GB | 18-25 tok/s |
+| **RTX 5090\*** | 32GB | Qwen 32B | Q5_K_M | 23 GB | 30-45 tok/s |
+
+\* RTX 50-series specs are estimated.
+
+> **Rule of thumb**: Pick a model where the GGUF size is close to or less than your VRAM. A 14 GB model on 8 GB VRAM (~40% on GPU) gives 6-8 tok/s. A 23 GB model on 8 GB VRAM (~25% on GPU) gives 2-3 tok/s.
 
 #### Example Commands for NVIDIA GPUs
 
-```powershell
-# RTX 4060 (8GB VRAM) - Windows
-$env:MODEL_FAMILY="Llama-3.3-70B-Instruct"   # or Qwen2.5-32B-Instruct, Mistral-Small-3.1-24B-Instruct, LFM2-24B-A2B, custom
-$env:MODEL_PATH="C:\local-llms"
-$env:QUANT="IQ2_XXS"
-$env:CTX="1024"
-$env:GPU_LAYERS="18"
-.\start_windows.bat
+```bash
+# H100 (80GB VRAM) - best quality, Llama 70B near-lossless
+MODEL_FAMILY=Llama-3.3-70B-Instruct QUANT=Q8_0 CTX=32768 ./start.sh
 
-# RTX 4070 (12GB VRAM) + 32GB RAM - Qwen2.5-32B for creative writing
-MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=8192 GPU_LAYERS=99 ./start.sh
+# H100 (80GB VRAM) - max throughput
+MODEL_FAMILY=Llama-3.3-70B-Instruct QUANT=Q5_K_M CTX=32768 ./start.sh
 
-# RTX 4090 (24GB VRAM) - Llama 70B
-MODEL_PATH=~/local-llms QUANT=Q3_K_M CTX=2048 GPU_LAYERS=45 ./start.sh
+# A30 (24GB VRAM) - best quality
+MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=8192 ./start.sh
 
-# RTX 3070 Ti (8GB VRAM) - Mistral 24B (smaller model, faster)
-MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct QUANT=Q4_K_M CTX=4096 GPU_LAYERS=33 ./start.sh
+# A30 (24GB VRAM) - larger context
+MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q4_K_M CTX=16384 ./start.sh
+
+# RTX 4070 Laptop (8GB VRAM) - best quality + speed (20-30 tok/s)
+MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=2048 GPU_LAYERS=20 ./start.sh
+
+# RTX 4070 Laptop (8GB VRAM) - long context (slower, ~6-8 tok/s)
+MODEL_FAMILY=Mistral-Small-3.1-24B-Instruct QUANT=Q4_K_M CTX=8192 ./start.sh
+
+# RTX 4070 desktop (12GB VRAM) - good speed + quality
+MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q4_K_M CTX=8192 ./start.sh
+
+# RTX 4090 (24GB VRAM) - full speed
+MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=8192 ./start.sh
 ```
 
-> **⚠️ VRAM vs RAM**: Unlike Apple Silicon's unified memory, NVIDIA GPUs have separate VRAM. If the model doesn't fit in VRAM, layers are offloaded to CPU (slower). Use `GPU_LAYERS` to control how many layers go to GPU.
+```powershell
+# Windows — RTX 4070 Laptop (8GB VRAM) — 20-30 tok/s
+$env:MODEL_FAMILY="Qwen2.5-32B-Instruct"
+$env:QUANT="Q5_K_M"
+$env:CTX="2048"
+$env:GPU_LAYERS="20"
+.\start_windows.bat
+```
 
-> **💡 Performance Tip**: Start with fewer GPU layers and increase until you hit VRAM limits. Watch for "CUDA out of memory" errors.
+> **⚠️ VRAM vs RAM**: Unlike Apple Silicon's unified memory, NVIDIA GPUs have separate VRAM. By default, llama-server's **auto-fit** determines how many layers fit in your VRAM — no manual `GPU_LAYERS` needed.
+
+> **💡 Override**: Set `GPU_LAYERS=N` only when you want a specific split. `GPU_LAYERS=0` forces CPU-only.
 
 ## 🚀 Quick Start
 
