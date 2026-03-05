@@ -16,10 +16,11 @@ import uuid
 import glob
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union, Any
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
+from pydantic import field_validator, ConfigDict
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -182,10 +183,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS for React frontend
+# CORS: localhost + tunnel origins so IDE clients (Cursor, Continue) can call /v1 via tunnel
+_cors_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+]
+# Allow any trycloudflare.com / localtunnel / ngrok origin when using TUNNEL=on
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origin_regex=r"https?://([a-z0-9-]+\.(trycloudflare\.com|loca\.lt|ngrok-free\.app|ngrok\.io)|localhost)(:\d+)?$",
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -335,9 +344,28 @@ async def generate(prompt: str, max_tokens: int = 512, temperature: float = 0.7)
 # llama-server-backed models (LFM2, etc.).
 # ---------------------------------------------------------------------------
 
+class OpenAIMessage(BaseModel):
+    """OpenAI-style message; content can be string or array of parts (e.g. VS Code AI Chat)."""
+    role: str
+    content: Union[str, list[dict[str, Any]]] = ""
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def content_to_str(cls, v: object) -> str:
+        if isinstance(v, str):
+            return v
+        if isinstance(v, list):
+            return " ".join(
+                part.get("text", "") for part in v
+                if isinstance(part, dict) and part.get("type") == "text"
+            )
+        return ""
+
+
 class OpenAIChatRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     model: str = ""
-    messages: list[Message]
+    messages: list[OpenAIMessage]
     max_tokens: int = 512
     temperature: float = 0.7
     stream: bool = False

@@ -1378,6 +1378,96 @@ Adjust `contextWindow` to match your `CTX` env var (default 2048). To use the Op
 
 Claude Desktop **cannot** connect to a local LLM. It always uses Anthropic's cloud models. MCP in Claude Desktop adds tools/data sources to Claude, not a different model.
 
+### Cursor & VS Code (vibe coding, plan-driven builds)
+
+You can use ParleyAI as the LLM backend inside **Cursor** or **VS Code** so chat, Composer, and code actions are powered by your local model. Useful for vibe coding and for implementing an app from a `build/plan.md` step by step.
+
+**1. Start ParleyAI** (backend must be running so the IDE can call it):
+
+```bash
+# Example: Qwen 32B, 20-30 tok/s on 8GB VRAM
+MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=2048 GPU_LAYERS=20 ./start.sh
+```
+
+```powershell
+# Windows
+$env:MODEL_FAMILY='Qwen2.5-32B-Instruct'
+$env:QUANT='Q5_K_M'
+$env:CTX='2048'
+$env:GPU_LAYERS='20'
+$env:MODEL_PATH='C:\path\to\local-llms'
+$env:LFM_IDLE_TIMEOUT='30'
+.\start_windows.bat
+```
+
+**2a. Cursor**
+
+- Open **Settings → Cursor Settings → Models** (or **Features → OpenAI**).
+- Enable **Custom** / **OpenAI-compatible** and set:
+  - **Base URL**: `http://localhost:8000/v1`
+  - **API key**: any non-empty string (e.g. `parley`); ParleyAI does not validate it.
+- Set **Model** to the ID ParleyAI reports, e.g. `Qwen2.5-32B-Instruct` (or run `curl http://localhost:8000/v1/models` to see `data[0].id`).
+
+If Cursor uses a tunnel for some features, you can set Base URL to your ParleyAI tunnel URL + `/v1` (e.g. `https://your-tunnel.trycloudflare.com/v1`) when ParleyAI was started with `TUNNEL=on`.
+
+**2b. VS Code (Continue extension)**
+
+1. Install the **[Continue](https://marketplace.visualstudio.com/items?itemName=Continue.continue)** extension.
+2. Open Continue’s config: **Continue Chat** (e.g. `Ctrl+L` / `Cmd+L`) → click the **gear** next to the model selector → **Open config.json** (or edit `~/.continue/config.json`).
+3. Add an OpenAI-compatible provider pointing at ParleyAI:
+
+```json
+{
+  "models": [
+    {
+      "title": "ParleyAI (Qwen 32B)",
+      "provider": "openai",
+      "model": "Qwen2.5-32B-Instruct",
+      "apiBase": "http://localhost:8000/v1",
+      "apiKey": "parley"
+    }
+  ]
+}
+```
+
+Use the same `model` value as returned by `GET http://localhost:8000/v1/models` (e.g. `Qwen2.5-32B-Instruct`). If you use a different ParleyAI model, set `model` to that family’s name. If Continue uses `config.yaml` instead, add the same provider with `apiBase`, `model`, and `apiKey`.
+
+**Continue config.yaml example (tunnel URL):**
+
+```yaml
+models:
+  - name: ParleyAI Qwen 32B
+    provider: openai
+    apiBase: "https://YOUR-CURRENT-TUNNEL.trycloudflare.com/v1"
+    model: Qwen2.5-32B-Instruct
+    apiKey: "parley"
+    roles:
+      - chat
+      - edit
+      - apply
+```
+
+- Use **`provider: openai`** (not `ParleyAI`) — the client uses the OpenAI API format with your custom `apiBase`.
+- Use **`model: Qwen2.5-32B-Instruct`** only — no `:Q5_K_M`; quantization is set on the server via `QUANT`.
+- Replace **`YOUR-CURRENT-TUNNEL`** with the URL printed when you run ParleyAI with `TUNNEL=on` (the URL changes every time you start the tunnel).
+
+**2c. VS Code (other OpenAI-compatible extensions)**
+
+Any extension that lets you set a custom **OpenAI API base URL** and **API key** can use ParleyAI:
+
+- **Base URL**: `http://localhost:8000/v1`
+- **API key**: any string (e.g. `parley`)
+- **Model**: value from `GET http://localhost:8000/v1/models` → `data[0].id`
+
+**3. Plan-driven app build (Cursor or VS Code)**
+
+1. In your repo, add a **`build/plan.md`** (or `plan.md`) with:
+   - App goal, tech stack, and features in order
+   - Per-feature or per-section acceptance criteria
+2. In **Cursor**: Open `build/plan.md`, then in **Composer** or **Chat** say e.g. *“Implement the app from this plan step by step”* or *“Implement section 2 from build/plan.md”*. The AI uses ParleyAI (if selected) and your plan as context.
+3. In **VS Code (Continue)**: Open `build/plan.md`, start a Continue chat, and ask e.g. *“Following build/plan.md, implement the auth module”*. Continue sends that to ParleyAI.
+4. You run the app and tests locally; the AI proposes edits and you accept or refine. For long plans, paste only the relevant section into the chat to stay within context limits, or use a larger `CTX` (e.g. 8192) if your VRAM allows.
+
 ### Quick test with curl
 
 ```bash
