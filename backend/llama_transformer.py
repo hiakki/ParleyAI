@@ -1137,6 +1137,21 @@ class LlamaServerTransformer:
     # Public API — same signatures as LlamaTransformer
     # ------------------------------------------------------------------
 
+    def _normalize_messages(self, messages: list[dict]) -> list[dict]:
+        """Ensure each message has role and string content for llama-server."""
+        out = []
+        for m in messages:
+            content = m.get("content")
+            if isinstance(content, list):
+                content = " ".join(
+                    p.get("text", "") for p in content
+                    if isinstance(p, dict) and p.get("type") == "text"
+                )
+            content = str(content or "").strip()
+            if content:
+                out.append({"role": m.get("role", "user"), "content": content})
+        return out if out else [{"role": "user", "content": "(empty)"}]
+
     def chat(
         self,
         messages: list[dict],
@@ -1145,6 +1160,7 @@ class LlamaServerTransformer:
         stream: bool = False,
     ) -> str | Generator[str, None, None]:
         self._ensure_running()
+        messages = self._normalize_messages(messages)
         try:
             if stream:
                 return self._chat_stream(messages, max_tokens, temperature)
@@ -1160,7 +1176,13 @@ class LlamaServerTransformer:
                 data=body,
                 headers={"Content-Type": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=300) as resp:
+            try:
+                resp = urllib.request.urlopen(req, timeout=300)
+            except urllib.error.HTTPError as e:
+                body_err = e.fp.read() if e.fp else b""
+                msg = body_err.decode("utf-8", errors="replace").strip() if body_err else e.reason
+                raise RuntimeError(f"llama-server HTTP {e.code}: {msg}") from e
+            with resp:
                 data = _json.loads(resp.read())
             return data["choices"][0]["message"]["content"]
         finally:
@@ -1169,6 +1191,7 @@ class LlamaServerTransformer:
     def _chat_stream(
         self, messages: list[dict], max_tokens: int, temperature: float,
     ) -> Generator[str, None, None]:
+        messages = self._normalize_messages(messages)
         body = _json.dumps({
             "model": self._family_name,
             "messages": messages,
@@ -1182,7 +1205,13 @@ class LlamaServerTransformer:
             headers={"Content-Type": "application/json"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=300) as resp:
+            try:
+                resp = urllib.request.urlopen(req, timeout=300)
+            except urllib.error.HTTPError as e:
+                body_err = e.fp.read() if e.fp else b""
+                msg = body_err.decode("utf-8", errors="replace").strip() if body_err else e.reason
+                raise RuntimeError(f"llama-server HTTP {e.code}: {msg}") from e
+            with resp:
                 for raw_line in resp:
                     line = raw_line.decode("utf-8", errors="replace").strip()
                     if not line.startswith("data: "):
@@ -1205,6 +1234,7 @@ class LlamaServerTransformer:
         temperature: float = 0.7,
     ) -> Generator[tuple[str | None, PerfMetrics | None], None, None]:
         self._ensure_running()
+        messages = self._normalize_messages(messages)
         start_time = time.perf_counter()
         first_token_time = None
         token_count = 0
@@ -1224,7 +1254,18 @@ class LlamaServerTransformer:
             headers={"Content-Type": "application/json"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=300) as resp:
+            try:
+                resp = urllib.request.urlopen(req, timeout=300)
+            except urllib.error.HTTPError as e:
+                body_err = b""
+                if e.fp:
+                    try:
+                        body_err = e.fp.read()
+                    except Exception:
+                        pass
+                msg = body_err.decode("utf-8", errors="replace").strip() if body_err else e.reason
+                raise RuntimeError(f"llama-server HTTP {e.code}: {msg}") from e
+            with resp:
                 for raw_line in resp:
                     line = raw_line.decode("utf-8", errors="replace").strip()
                     if not line.startswith("data: "):

@@ -401,7 +401,10 @@ async def openai_chat_completions(request: OpenAIChatRequest):
     if transformer is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
-    messages = [{"role": m.role, "content": m.content} for m in request.messages]
+    messages = [{"role": m.role, "content": (m.content or "")} for m in request.messages]
+    messages = [m for m in messages if m["content"] and isinstance(m["content"], str)]
+    if not messages:
+        raise HTTPException(status_code=400, detail="At least one message with non-empty content is required")
     user_msg = next((m["content"][:100] for m in messages if m["role"] == "user"), "")
     logger.info(f"[v1] Chat request: stream={request.stream}, max_tokens={request.max_tokens}")
     logger.info(f"[v1] User message: {user_msg}{'...' if len(user_msg) >= 100 else ''}")
