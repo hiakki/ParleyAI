@@ -417,32 +417,32 @@ async def stream_chat(
                 max_tokens=max_tokens,
                 temperature=temperature,
             ):
-            if token is not None:
-                if not first_token_logged:
-                    logger.info("[api/chat] Streaming output...")
-                    first_token_logged = True
-                token_count += 1
-                now = time.time()
-                if now - last_status_log >= STATUS_INTERVAL:
-                    elapsed = int(now - stream_start)
-                    logger.info("[api/chat] Still streaming... %ds elapsed, %d tokens so far", elapsed, token_count)
-                    last_status_log = now
-                # Streaming token
-                data = json.dumps({"token": token, "done": False})
-                yield f"data: {data}\n\n"
-                await asyncio.sleep(0)  # Allow other tasks to run
-            elif metrics is not None:
-                # Final message with metrics
-                logger.info(f"Generation complete: {token_count} tokens")
-                logger.info(f"Performance: {metrics.tokens_per_second:.2f} tok/s, "
-                           f"prompt: {metrics.prompt_tokens} tok @ {metrics.prompt_per_second:.2f} tok/s, "
-                           f"total: {metrics.total_time_ms:.0f}ms")
-                data = json.dumps({
-                    "token": "",
-                    "done": True,
-                    "metrics": metrics.to_dict(),
-                })
-                yield f"data: {data}\n\n"
+                if token is not None:
+                    if not first_token_logged:
+                        logger.info("[api/chat] Streaming output...")
+                        first_token_logged = True
+                    token_count += 1
+                    now = time.time()
+                    if now - last_status_log >= STATUS_INTERVAL:
+                        elapsed = int(now - stream_start)
+                        logger.info("[api/chat] Still streaming... %ds elapsed, %d tokens so far", elapsed, token_count)
+                        last_status_log = now
+                    # Streaming token
+                    data = json.dumps({"token": token, "done": False})
+                    yield f"data: {data}\n\n"
+                    await asyncio.sleep(0)  # Allow other tasks to run
+                elif metrics is not None:
+                    # Final message with metrics
+                    logger.info(f"Generation complete: {token_count} tokens")
+                    logger.info(f"Performance: {metrics.tokens_per_second:.2f} tok/s, "
+                               f"prompt: {metrics.prompt_tokens} tok @ {metrics.prompt_per_second:.2f} tok/s, "
+                               f"total: {metrics.total_time_ms:.0f}ms")
+                    data = json.dumps({
+                        "token": "",
+                        "done": True,
+                        "metrics": metrics.to_dict(),
+                    })
+                    yield f"data: {data}\n\n"
         except Exception as e:
             logger.error(f"Error during streaming: {e}", exc_info=True)
             yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
