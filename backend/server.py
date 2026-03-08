@@ -26,6 +26,7 @@ import json
 import asyncio
 import logging
 import sys
+import threading
 import time
 import uuid
 import glob
@@ -83,6 +84,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Only one request can use the text model at a time (llama-server is single-request).
+# Streaming holds this for the whole stream; other requests get 503 if they can't acquire quickly.
+_transformer_lock = threading.Lock()
+TRANSFORMER_LOCK_TIMEOUT = 2  # seconds to wait before returning 503 "model busy"
 
 # Configuration from environment (.env or os.environ); prefer *_text / *_image / *_video / *_tts names
 MODEL_FAMILY = os.getenv("model_family_text") or os.getenv("MODEL_FAMILY", "Llama-3.3-70B-Instruct")
@@ -189,7 +194,7 @@ MODEL_PATH = resolve_model_path(MODEL_PATH_ENV, QUANT, MODEL_FAMILY)
 
 # Global transformer instance (loaded at startup or on first request when text_lazy_load=1)
 transformer: Optional[LlamaTransformer] = None
-_transformer_lock = asyncio.Lock()
+_transformer_load_lock = asyncio.Lock()  # serializes loading only; inference uses _transformer_lock (threading)
 
 
 async def ensure_text_loaded() -> None:
@@ -197,7 +202,7 @@ async def ensure_text_loaded() -> None:
     global transformer
     if not ENABLE_TEXT or transformer is not None:
         return
-    async with _transformer_lock:
+    async with _transformer_load_lock:
         if transformer is not None:
             return
         logger.info("Loading text model on first request...")
@@ -373,14 +378,22 @@ async def chat(request: ChatRequest):
             media_type="text/event-stream",
         )
     else:
-        response = transformer.chat(
-            messages,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-            stream=False,
-        )
-        logger.info(f"Response generated: {len(response)} chars")
-        return ChatResponse(response=response)
+        if not _transformer_lock.acquire(blocking=True, timeout=TRANSFORMER_LOCK_TIMEOUT):
+            raise HTTPException(
+                status_code=503,
+                detail="Model is busy with another request (streaming or generation in progress). Please try again later.",
+            )
+        try:
+            response = transformer.chat(
+                messages,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
+                stream=False,
+            )
+            logger.info(f"Response generated: {len(response)} chars")
+            return ChatResponse(response=response)
+        finally:
+            _transformer_lock.release()
 
 
 async def stream_chat(
@@ -389,18 +402,21 @@ async def stream_chat(
     temperature: float,
 ):
     """Generator for SSE streaming with performance metrics."""
-    logger.info("Starting streaming generation...")
-    token_count = 0
-    first_token_logged = False
-    stream_start = time.time()
-    last_status_log = stream_start
-    STATUS_INTERVAL = 10  # log "still streaming" every N seconds
+    _transformer_lock.acquire()
     try:
-        for token, metrics in transformer.chat_with_metrics(
-            messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-        ):
+        logger.info("Starting streaming generation...")
+        logger.info("[api/chat] Calling model (if cold start: loading + prompt eval can take 1–2 min before first token)...")
+        token_count = 0
+        first_token_logged = False
+        stream_start = time.time()
+        last_status_log = stream_start
+        STATUS_INTERVAL = 10  # log "still streaming" every N seconds
+        try:
+            for token, metrics in transformer.chat_with_metrics(
+                messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            ):
             if token is not None:
                 if not first_token_logged:
                     logger.info("[api/chat] Streaming output...")
@@ -427,9 +443,11 @@ async def stream_chat(
                     "metrics": metrics.to_dict(),
                 })
                 yield f"data: {data}\n\n"
-    except Exception as e:
-        logger.error(f"Error during streaming: {e}", exc_info=True)
-        yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
+        except Exception as e:
+            logger.error(f"Error during streaming: {e}", exc_info=True)
+            yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
+    finally:
+        _transformer_lock.release()
 
 
 @app.post("/api/generate")
@@ -440,14 +458,21 @@ async def generate(prompt: str, max_tokens: int = 512, temperature: float = 0.7)
     await ensure_text_loaded()
     if transformer is None:
         raise HTTPException(status_code=503, detail="Text model not loaded")
-    
-    response = transformer.generate(
-        prompt,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        stream=False,
-    )
-    return {"response": response}
+    if not _transformer_lock.acquire(blocking=True, timeout=TRANSFORMER_LOCK_TIMEOUT):
+        raise HTTPException(
+            status_code=503,
+            detail="Model is busy with another request (streaming or generation in progress). Please try again later.",
+        )
+    try:
+        response = transformer.generate(
+            prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stream=False,
+        )
+        return {"response": response}
+    finally:
+        _transformer_lock.release()
 
 
 # --- Optional: story (script JSON), TTS, image, video (lazy-loaded when deps installed) ---
@@ -495,6 +520,7 @@ class StoryRequest(BaseModel):
     prompt: str
     system: Optional[str] = None
     max_tokens: int = 4096
+    stream: bool = False
 
 
 class TTSRequest(BaseModel):
@@ -517,9 +543,24 @@ class VideoRequest(BaseModel):
     fps: int = 6
 
 
+async def _stream_story_sse(messages: list[dict], max_tokens: int, temperature: float):
+    """SSE: stream raw text deltas so the client can avoid proxy timeouts."""
+    _transformer_lock.acquire()
+    try:
+        for token, _ in transformer.chat_with_metrics(
+            messages, max_tokens=max_tokens, temperature=temperature,
+        ):
+            if token is not None:
+                yield f"data: {json.dumps({'delta': token})}\n\n"
+                await asyncio.sleep(0)
+        yield "data: {\"done\": true}\n\n"
+    finally:
+        _transformer_lock.release()
+
+
 @app.post("/api/story")
 async def api_story(req: StoryRequest):
-    """Generate story/script as JSON. Uses the same LLM."""
+    """Generate story/script as JSON. Uses the same LLM. Set stream=true to stream tokens (avoids proxy timeouts)."""
     if not ENABLE_TEXT or transformer is None:
         raise HTTPException(status_code=503, detail="Text model disabled (enable_text=0) or not loaded")
     await ensure_text_loaded()
@@ -527,20 +568,36 @@ async def api_story(req: StoryRequest):
         raise HTTPException(status_code=503, detail="Text model not loaded")
     system = req.system or "You are a scriptwriter. Respond with valid JSON only: { title, description, hashtags, scenes: [{ text, visualDescription }] }."
     messages = [{"role": "system", "content": system}, {"role": "user", "content": req.prompt}]
-    raw = transformer.chat(messages, max_tokens=req.max_tokens, temperature=0.95, stream=False)
-    raw = raw.strip()
-    if "```json" in raw:
-        raw = raw.split("```json", 1)[1].split("```", 1)[0].strip()
-    elif "```" in raw:
-        raw = raw.split("```", 1)[1].split("```", 1)[0].strip()
+
+    if req.stream:
+        return StreamingResponse(
+            _stream_story_sse(messages, req.max_tokens, 0.95),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    if not _transformer_lock.acquire(blocking=True, timeout=TRANSFORMER_LOCK_TIMEOUT):
+        raise HTTPException(
+            status_code=503,
+            detail="Model is busy with another request (streaming or generation in progress). Please try again later.",
+        )
     try:
-        out = json.loads(raw)
-    except json.JSONDecodeError:
-        out = {"title": "Untitled", "description": "", "hashtags": [], "scenes": [{"text": raw[:500], "visualDescription": "Scene"}]}
-    scenes = out.get("scenes") or []
-    if not isinstance(scenes, list):
-        scenes = []
-    return {"data": {"title": out.get("title") or "Untitled", "description": out.get("description") or "", "hashtags": out.get("hashtags") or [], "scenes": [{"text": s.get("text", ""), "visualDescription": s.get("visualDescription", "")} for s in scenes]}}
+        raw = transformer.chat(messages, max_tokens=req.max_tokens, temperature=0.95, stream=False)
+        raw = raw.strip()
+        if "```json" in raw:
+            raw = raw.split("```json", 1)[1].split("```", 1)[0].strip()
+        elif "```" in raw:
+            raw = raw.split("```", 1)[1].split("```", 1)[0].strip()
+        try:
+            out = json.loads(raw)
+        except json.JSONDecodeError:
+            out = {"title": "Untitled", "description": "", "hashtags": [], "scenes": [{"text": raw[:500], "visualDescription": "Scene"}]}
+        scenes = out.get("scenes") or []
+        if not isinstance(scenes, list):
+            scenes = []
+        return {"data": {"title": out.get("title") or "Untitled", "description": out.get("description") or "", "hashtags": out.get("hashtags") or [], "scenes": [{"text": s.get("text", ""), "visualDescription": s.get("visualDescription", "")} for s in scenes]}}
+    finally:
+        _transformer_lock.release()
 
 
 if _tts_available or _image_video_available:
@@ -667,29 +724,37 @@ async def openai_chat_completions(request: OpenAIChatRequest):
     ts = int(__import__("time").time())
 
     if request.stream:
-        logger.info("[v1] Stream started (waiting for first token...)")
+        logger.info("[v1] Stream started (waiting for first token). If llama-server was idle, it will load the model now — first token can take 1–2 min for large models.")
         return StreamingResponse(
             openai_stream_chat(messages, request.max_tokens, request.temperature, model_name, ts),
             media_type="text/event-stream",
         )
 
     # Non-streaming
-    response_text = transformer.chat(
-        messages, max_tokens=request.max_tokens, temperature=request.temperature, stream=False,
-    )
-    logger.info(f"[v1] Response: {len(response_text)} chars")
-    return {
-        "id": f"chatcmpl-{ts}",
-        "object": "chat.completion",
-        "created": ts,
-        "model": model_name,
-        "choices": [{
-            "index": 0,
-            "message": {"role": "assistant", "content": response_text},
-            "finish_reason": "stop",
-        }],
-        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-    }
+    if not _transformer_lock.acquire(blocking=True, timeout=TRANSFORMER_LOCK_TIMEOUT):
+        raise HTTPException(
+            status_code=503,
+            detail="Model is busy with another request (streaming or generation in progress). Please try again later.",
+        )
+    try:
+        response_text = transformer.chat(
+            messages, max_tokens=request.max_tokens, temperature=request.temperature, stream=False,
+        )
+        logger.info(f"[v1] Response: {len(response_text)} chars")
+        return {
+            "id": f"chatcmpl-{ts}",
+            "object": "chat.completion",
+            "created": ts,
+            "model": model_name,
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": response_text},
+                "finish_reason": "stop",
+            }],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
+    finally:
+        _transformer_lock.release()
 
 
 async def openai_stream_chat(
@@ -697,50 +762,55 @@ async def openai_stream_chat(
     model_name: str, ts: int,
 ):
     """SSE generator in OpenAI streaming format."""
-    first_token_logged = False
-    stream_start = time.time()
-    last_status_log = stream_start
-    STATUS_INTERVAL = 10  # log "still streaming" every N seconds
-    token_count = 0
+    _transformer_lock.acquire()  # hold for entire stream so /api/story etc. get 503 instead of blocking
     try:
-        for token, metrics in transformer.chat_with_metrics(
-            messages, max_tokens=max_tokens, temperature=temperature,
-        ):
-            if token is not None:
-                token_count += 1
-                if not first_token_logged:
-                    logger.info("[v1] Streaming output...")
-                    first_token_logged = True
-                now = time.time()
-                if now - last_status_log >= STATUS_INTERVAL:
-                    elapsed = int(now - stream_start)
-                    logger.info("[v1] Still streaming... %ds elapsed, %d tokens so far", elapsed, token_count)
-                    last_status_log = now
-                chunk = {
-                    "id": f"chatcmpl-{ts}",
-                    "object": "chat.completion.chunk",
-                    "created": ts,
-                    "model": model_name,
-                    "choices": [{"index": 0, "delta": {"content": token}, "finish_reason": None}],
-                }
-                yield f"data: {json.dumps(chunk)}\n\n"
-                await asyncio.sleep(0)
-            elif metrics is not None:
-                logger.info(f"[v1] Done: {metrics.completion_tokens} tok, {metrics.tokens_per_second:.1f} tok/s")
-                final = {
-                    "id": f"chatcmpl-{ts}",
-                    "object": "chat.completion.chunk",
-                    "created": ts,
-                    "model": model_name,
-                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-                }
-                yield f"data: {json.dumps(final)}\n\n"
-        yield "data: [DONE]\n\n"
-    except Exception as e:
-        logger.error(f"[v1] Stream error: {e}", exc_info=True)
-        err = {"error": {"message": str(e), "type": "server_error"}}
-        yield f"data: {json.dumps(err)}\n\n"
-        yield "data: [DONE]\n\n"
+        first_token_logged = False
+        stream_start = time.time()
+        last_status_log = stream_start
+        STATUS_INTERVAL = 10  # log "still streaming" every N seconds
+        token_count = 0
+        logger.info("[v1] Calling model (if cold start: loading + prompt eval can take 1–2 min before first token)...")
+        try:
+            for token, metrics in transformer.chat_with_metrics(
+                messages, max_tokens=max_tokens, temperature=temperature,
+            ):
+                if token is not None:
+                    token_count += 1
+                    if not first_token_logged:
+                        logger.info("[v1] Streaming output...")
+                        first_token_logged = True
+                    now = time.time()
+                    if now - last_status_log >= STATUS_INTERVAL:
+                        elapsed = int(now - stream_start)
+                        logger.info("[v1] Still streaming... %ds elapsed, %d tokens so far", elapsed, token_count)
+                        last_status_log = now
+                    chunk = {
+                        "id": f"chatcmpl-{ts}",
+                        "object": "chat.completion.chunk",
+                        "created": ts,
+                        "model": model_name,
+                        "choices": [{"index": 0, "delta": {"content": token}, "finish_reason": None}],
+                    }
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                    await asyncio.sleep(0)
+                elif metrics is not None:
+                    logger.info(f"[v1] Done: {metrics.completion_tokens} tok, {metrics.tokens_per_second:.1f} tok/s")
+                    final = {
+                        "id": f"chatcmpl-{ts}",
+                        "object": "chat.completion.chunk",
+                        "created": ts,
+                        "model": model_name,
+                        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                    }
+                    yield f"data: {json.dumps(final)}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            logger.error(f"[v1] Stream error: {e}", exc_info=True)
+            err = {"error": {"message": str(e), "type": "server_error"}}
+            yield f"data: {json.dumps(err)}\n\n"
+            yield "data: [DONE]\n\n"
+    finally:
+        _transformer_lock.release()
 
 
 # ---------------------------------------------------------------------------
@@ -808,26 +878,34 @@ async def anthropic_messages(request: AnthropicMessagesRequest):
     msg_id = f"msg_{uuid.uuid4().hex[:24]}"
 
     if request.stream:
-        logger.info("[messages] Stream started (waiting for first token...)")
+        logger.info("[messages] Stream started (waiting for first token). If llama-server was idle, model load can take 1–2 min.")
         return StreamingResponse(
             anthropic_stream_chat(messages, request.max_tokens, request.temperature, model_name, msg_id),
             media_type="text/event-stream",
         )
 
-    response_text = transformer.chat(
-        messages, max_tokens=request.max_tokens, temperature=request.temperature, stream=False,
-    )
-    logger.info(f"[messages] Response: {len(response_text)} chars")
-    return {
-        "id": msg_id,
-        "type": "message",
-        "role": "assistant",
-        "content": [{"type": "text", "text": response_text}],
-        "model": model_name,
-        "stop_reason": "end_turn",
-        "stop_sequence": None,
-        "usage": {"input_tokens": 0, "output_tokens": 0},
-    }
+    if not _transformer_lock.acquire(blocking=True, timeout=TRANSFORMER_LOCK_TIMEOUT):
+        raise HTTPException(
+            status_code=503,
+            detail="Model is busy with another request (streaming or generation in progress). Please try again later.",
+        )
+    try:
+        response_text = transformer.chat(
+            messages, max_tokens=request.max_tokens, temperature=request.temperature, stream=False,
+        )
+        logger.info(f"[messages] Response: {len(response_text)} chars")
+        return {
+            "id": msg_id,
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "text", "text": response_text}],
+            "model": model_name,
+            "stop_reason": "end_turn",
+            "stop_sequence": None,
+            "usage": {"input_tokens": 0, "output_tokens": 0},
+        }
+    finally:
+        _transformer_lock.release()
 
 
 async def anthropic_stream_chat(
@@ -835,65 +913,70 @@ async def anthropic_stream_chat(
     model_name: str, msg_id: str,
 ):
     """SSE generator in Anthropic streaming format."""
-    def sse(event: str, data: dict) -> str:
-        return f"event: {event}\ndata: {json.dumps(data)}\n\n"
-
-    yield sse("message_start", {
-        "type": "message_start",
-        "message": {
-            "id": msg_id, "type": "message", "role": "assistant",
-            "content": [], "model": model_name,
-            "stop_reason": None, "stop_sequence": None,
-            "usage": {"input_tokens": 0, "output_tokens": 0},
-        },
-    })
-    yield sse("content_block_start", {
-        "type": "content_block_start", "index": 0,
-        "content_block": {"type": "text", "text": ""},
-    })
-    yield sse("ping", {"type": "ping"})
-
-    output_tokens = 0
-    first_token_logged = False
-    stream_start = time.time()
-    last_status_log = stream_start
-    STATUS_INTERVAL = 10  # log "still streaming" every N seconds
+    _transformer_lock.acquire()
     try:
-        for token, metrics in transformer.chat_with_metrics(
-            messages, max_tokens=max_tokens, temperature=temperature,
-        ):
-            if token is not None:
-                if not first_token_logged:
-                    logger.info("[messages] Streaming output...")
-                    first_token_logged = True
-                output_tokens += 1
-                now = time.time()
-                if now - last_status_log >= STATUS_INTERVAL:
-                    elapsed = int(now - stream_start)
-                    logger.info("[messages] Still streaming... %ds elapsed, %d tokens so far", elapsed, output_tokens)
-                    last_status_log = now
-                yield sse("content_block_delta", {
-                    "type": "content_block_delta", "index": 0,
-                    "delta": {"type": "text_delta", "text": token},
-                })
-                await asyncio.sleep(0)
-            elif metrics is not None:
-                output_tokens = getattr(metrics, "completion_tokens", output_tokens)
-                logger.info(f"[messages] Done: {output_tokens} tok, {metrics.tokens_per_second:.1f} tok/s")
+        def sse(event: str, data: dict) -> str:
+            return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
-        yield sse("content_block_stop", {"type": "content_block_stop", "index": 0})
-        yield sse("message_delta", {
-            "type": "message_delta",
-            "delta": {"stop_reason": "end_turn", "stop_sequence": None},
-            "usage": {"output_tokens": output_tokens},
+        yield sse("message_start", {
+            "type": "message_start",
+            "message": {
+                "id": msg_id, "type": "message", "role": "assistant",
+                "content": [], "model": model_name,
+                "stop_reason": None, "stop_sequence": None,
+                "usage": {"input_tokens": 0, "output_tokens": 0},
+            },
         })
-        yield sse("message_stop", {"type": "message_stop"})
-    except Exception as e:
-        logger.error(f"[messages] Stream error: {e}", exc_info=True)
-        yield sse("error", {
-            "type": "error",
-            "error": {"type": "server_error", "message": str(e)},
+        yield sse("content_block_start", {
+            "type": "content_block_start", "index": 0,
+            "content_block": {"type": "text", "text": ""},
         })
+        yield sse("ping", {"type": "ping"})
+
+        output_tokens = 0
+        first_token_logged = False
+        stream_start = time.time()
+        last_status_log = stream_start
+        STATUS_INTERVAL = 10  # log "still streaming" every N seconds
+        logger.info("[messages] Calling model (if cold start: loading + prompt eval can take 1–2 min before first token)...")
+        try:
+            for token, metrics in transformer.chat_with_metrics(
+                messages, max_tokens=max_tokens, temperature=temperature,
+            ):
+                if token is not None:
+                    if not first_token_logged:
+                        logger.info("[messages] Streaming output...")
+                        first_token_logged = True
+                    output_tokens += 1
+                    now = time.time()
+                    if now - last_status_log >= STATUS_INTERVAL:
+                        elapsed = int(now - stream_start)
+                        logger.info("[messages] Still streaming... %ds elapsed, %d tokens so far", elapsed, output_tokens)
+                        last_status_log = now
+                    yield sse("content_block_delta", {
+                        "type": "content_block_delta", "index": 0,
+                        "delta": {"type": "text_delta", "text": token},
+                    })
+                    await asyncio.sleep(0)
+                elif metrics is not None:
+                    output_tokens = getattr(metrics, "completion_tokens", output_tokens)
+                    logger.info(f"[messages] Done: {output_tokens} tok, {metrics.tokens_per_second:.1f} tok/s")
+
+            yield sse("content_block_stop", {"type": "content_block_stop", "index": 0})
+            yield sse("message_delta", {
+                "type": "message_delta",
+                "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+                "usage": {"output_tokens": output_tokens},
+            })
+            yield sse("message_stop", {"type": "message_stop"})
+        except Exception as e:
+            logger.error(f"[messages] Stream error: {e}", exc_info=True)
+            yield sse("error", {
+                "type": "error",
+                "error": {"type": "server_error", "message": str(e)},
+            })
+    finally:
+        _transformer_lock.release()
 
 
 if __name__ == "__main__":
