@@ -13,6 +13,9 @@ echo ParleyAI - Local Chat
 echo.
 echo Usage:
 echo   .\start_windows.bat                Start with defaults
+echo   .\start_windows.bat backend        Start only backend (e.g. after restart)
+echo   .\start_windows.bat frontend       Start only frontend
+echo   .\start_windows.bat tunnel         Start only tunnel ^(new URL in .tunnel.log^)
 echo   python backend\run.py              Backend only (single command: venv + deps + server)
 echo   set MODEL_FAMILY=LFM2-24B-A2B          Use LFM2 model
 echo   set TUNNEL=on                       Expose over the internet
@@ -115,6 +118,66 @@ if "%LLAMA_SERVER_PATH%"=="" if exist "llama-cpp\llama-server.exe" set "LLAMA_SE
 if "%LLAMA_SERVER_PATH%"=="" if exist "llama-server.exe" set "LLAMA_SERVER_PATH=%CD%\llama-server.exe"
 if "%LLAMA_SERVER_PATH%"=="" if exist "backend\bin\llama-server.exe" set "LLAMA_SERVER_PATH=%CD%\backend\bin\llama-server.exe"
 
+:: Start only one component (restart one without touching others / without new tunnel URL)
+if "%1"=="backend" goto start_backend_only
+if "%1"=="frontend" goto start_frontend_only
+if "%1"=="tunnel" goto start_tunnel_only
+goto start_full
+
+:start_backend_only
+echo Starting backend only...
+if not exist "backend\logs" mkdir "backend\logs"
+cd backend
+start "ParleyAI Backend" cmd /k "call venv\Scripts\activate.bat && python -u -m uvicorn server:app --host 127.0.0.1 --port 8000"
+cd ..
+echo Backend window started. Frontend and tunnel unchanged.
+goto end
+
+:start_frontend_only
+echo Starting frontend only...
+cd frontend
+start "ParleyAI Frontend" cmd /k "npm run dev"
+cd ..
+echo Frontend window started. Backend and tunnel unchanged.
+goto end
+
+:start_tunnel_only
+echo Starting tunnel only ^(new URL will be in .tunnel.log^)...
+set USE_CF=0
+set USE_LT=0
+if /i "%TUNNEL_TOOL%"=="cloudflared" (
+    set USE_CF=1
+) else if /i "%TUNNEL_TOOL%"=="localtunnel" (
+    set USE_LT=1
+) else (
+    where cloudflared >nul 2>&1
+    if !ERRORLEVEL!==0 (set USE_CF=1) else (
+        where lt >nul 2>&1
+        if !ERRORLEVEL!==0 (set USE_LT=1) else (set USE_CF=1)
+    )
+)
+if !USE_CF!==1 (
+    where cloudflared >nul 2>&1
+    if !ERRORLEVEL!==0 (
+        start "ParleyAI Tunnel" cmd /k "cloudflared tunnel --url http://localhost:5173 --protocol http2 --no-autoupdate 2>.tunnel.log"
+        timeout /t 8 /nobreak >nul
+        echo   URL in .tunnel.log:
+        type .tunnel.log 2>nul
+    ) else (echo cloudflared not found. Install: choco install cloudflared)
+) else if !USE_LT!==1 (
+    where lt >nul 2>&1
+    if !ERRORLEVEL!==0 (
+        set LT_ARGS=--port 5173
+        if defined SUBDOMAIN set LT_ARGS=!LT_ARGS! --subdomain !SUBDOMAIN!
+        start "ParleyAI Tunnel" cmd /k "lt !LT_ARGS! > .tunnel.log 2>&1"
+        timeout /t 5 /nobreak >nul
+        echo   URL in .tunnel.log:
+        type .tunnel.log 2>nul
+    ) else (echo localtunnel not found. Install: npm install -g localtunnel)
+)
+goto end
+
+:start_full
 :: Display configuration
 echo Configuration:
 echo   Model family: %MODEL_FAMILY%
@@ -308,3 +371,9 @@ echo   Press Ctrl+C in each window to stop.
 echo.
 
 pause
+exit /b 0
+
+:end
+echo.
+pause
+exit /b 0
