@@ -25,6 +25,7 @@ if _env_file.exists():
 import json
 import asyncio
 import logging
+import queue
 import sys
 import threading
 import time
@@ -88,6 +89,29 @@ logger = logging.getLogger(__name__)
 # Streaming holds this for the whole stream; other requests get 503 if they can't acquire quickly.
 _transformer_lock = threading.Lock()
 TRANSFORMER_LOCK_TIMEOUT = 2  # seconds to wait before returning 503 "model busy"
+# Streaming: run blocking model call in thread so event loop can send chunks; wait up to this long for the lock.
+STREAMING_LOCK_TIMEOUT = 120  # seconds (model load + first token can be slow)
+
+
+def _run_chat_stream_in_thread(trans, messages, max_tokens, temperature, out_queue: queue.Queue):
+    """Run transformer.chat_with_metrics in a thread; put ('token', token), ('metrics', metrics), or ('done', None) / ('error', msg)."""
+    if not _transformer_lock.acquire(blocking=True, timeout=STREAMING_LOCK_TIMEOUT):
+        out_queue.put(("error", "Model is busy with another request. Please try again later."))
+        return
+    try:
+        for token, metrics in trans.chat_with_metrics(
+            messages, max_tokens=max_tokens, temperature=temperature
+        ):
+            if token is not None:
+                out_queue.put(("token", token))
+            elif metrics is not None:
+                out_queue.put(("metrics", metrics))
+        out_queue.put(("done", None))
+    except Exception as e:
+        out_queue.put(("error", str(e)))
+    finally:
+        _transformer_lock.release()
+
 
 # Configuration from environment (.env or os.environ); prefer *_text / *_image / *_video / *_tts names
 MODEL_FAMILY = os.getenv("model_family_text") or os.getenv("MODEL_FAMILY", "Llama-3.3-70B-Instruct")
@@ -401,53 +425,58 @@ async def stream_chat(
     max_tokens: int,
     temperature: float,
 ):
-    """Generator for SSE streaming with performance metrics."""
-    _transformer_lock.acquire()
+    """Generator for SSE streaming with performance metrics. Runs model in thread so event loop is not blocked."""
+    out_queue = queue.Queue()
+    thread = threading.Thread(
+        target=_run_chat_stream_in_thread,
+        args=(transformer, messages, max_tokens, temperature, out_queue),
+        daemon=True,
+    )
+    thread.start()
+    token_count = 0
+    first_token_logged = False
+    stream_start = time.time()
+    last_status_log = stream_start
+    STATUS_INTERVAL = 10
+    logger.info("Starting streaming generation...")
+    logger.info("[api/chat] Calling model (if cold start: loading + prompt eval can take 1–2 min before first token)...")
     try:
-        logger.info("Starting streaming generation...")
-        logger.info("[api/chat] Calling model (if cold start: loading + prompt eval can take 1–2 min before first token)...")
-        token_count = 0
-        first_token_logged = False
-        stream_start = time.time()
-        last_status_log = stream_start
-        STATUS_INTERVAL = 10  # log "still streaming" every N seconds
-        try:
-            for token, metrics in transformer.chat_with_metrics(
-                messages,
-                max_tokens=max_tokens,
-                temperature=temperature,
-            ):
-                if token is not None:
-                    if not first_token_logged:
-                        logger.info("[api/chat] Streaming output...")
-                        first_token_logged = True
-                    token_count += 1
-                    now = time.time()
-                    if now - last_status_log >= STATUS_INTERVAL:
-                        elapsed = int(now - stream_start)
-                        logger.info("[api/chat] Still streaming... %ds elapsed, %d tokens so far", elapsed, token_count)
-                        last_status_log = now
-                    # Streaming token
-                    data = json.dumps({"token": token, "done": False})
-                    yield f"data: {data}\n\n"
-                    await asyncio.sleep(0)  # Allow other tasks to run
-                elif metrics is not None:
-                    # Final message with metrics
-                    logger.info(f"Generation complete: {token_count} tokens")
-                    logger.info(f"Performance: {metrics.tokens_per_second:.2f} tok/s, "
-                               f"prompt: {metrics.prompt_tokens} tok @ {metrics.prompt_per_second:.2f} tok/s, "
-                               f"total: {metrics.total_time_ms:.0f}ms")
-                    data = json.dumps({
-                        "token": "",
-                        "done": True,
-                        "metrics": metrics.to_dict(),
-                    })
-                    yield f"data: {data}\n\n"
-        except Exception as e:
-            logger.error(f"Error during streaming: {e}", exc_info=True)
-            yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
-    finally:
-        _transformer_lock.release()
+        while True:
+            kind, value = await asyncio.to_thread(out_queue.get)
+            if kind == "error":
+                logger.error(f"[api/chat] Stream error: {value}")
+                yield f"data: {json.dumps({'error': value, 'done': True})}\n\n"
+                return
+            if kind == "done":
+                break
+            if kind == "token":
+                if not first_token_logged:
+                    logger.info("[api/chat] Streaming output...")
+                    first_token_logged = True
+                token_count += 1
+                now = time.time()
+                if now - last_status_log >= STATUS_INTERVAL:
+                    elapsed = int(now - stream_start)
+                    logger.info("[api/chat] Still streaming... %ds elapsed, %d tokens so far", elapsed, token_count)
+                    last_status_log = now
+                data = json.dumps({"token": value, "done": False})
+                yield f"data: {data}\n\n"
+                await asyncio.sleep(0)
+            elif kind == "metrics":
+                metrics = value
+                logger.info(f"Generation complete: {token_count} tokens")
+                logger.info(f"Performance: {metrics.tokens_per_second:.2f} tok/s, "
+                           f"prompt: {metrics.prompt_tokens} tok @ {metrics.prompt_per_second:.2f} tok/s, "
+                           f"total: {metrics.total_time_ms:.0f}ms")
+                data = json.dumps({
+                    "token": "",
+                    "done": True,
+                    "metrics": metrics.to_dict(),
+                })
+                yield f"data: {data}\n\n"
+    except asyncio.CancelledError:
+        logger.info("[api/chat] Stream cancelled (client disconnect)")
+        raise
 
 
 @app.post("/api/generate")
@@ -544,18 +573,28 @@ class VideoRequest(BaseModel):
 
 
 async def _stream_story_sse(messages: list[dict], max_tokens: int, temperature: float):
-    """SSE: stream raw text deltas so the client can avoid proxy timeouts."""
-    _transformer_lock.acquire()
+    """SSE: stream raw text deltas so the client can avoid proxy timeouts. Runs model in thread so event loop is not blocked."""
+    out_queue = queue.Queue()
+    thread = threading.Thread(
+        target=_run_chat_stream_in_thread,
+        args=(transformer, messages, max_tokens, temperature, out_queue),
+        daemon=True,
+    )
+    thread.start()
     try:
-        for token, _ in transformer.chat_with_metrics(
-            messages, max_tokens=max_tokens, temperature=temperature,
-        ):
-            if token is not None:
-                yield f"data: {json.dumps({'delta': token})}\n\n"
+        while True:
+            kind, value = await asyncio.to_thread(out_queue.get)
+            if kind == "error":
+                yield f"data: {json.dumps({'error': value, 'done': True})}\n\n"
+                return
+            if kind == "done":
+                break
+            if kind == "token":
+                yield f"data: {json.dumps({'delta': value})}\n\n"
                 await asyncio.sleep(0)
         yield "data: {\"done\": true}\n\n"
-    finally:
-        _transformer_lock.release()
+    except asyncio.CancelledError:
+        raise
 
 
 @app.post("/api/story")
@@ -761,56 +800,64 @@ async def openai_stream_chat(
     messages: list[dict], max_tokens: int, temperature: float,
     model_name: str, ts: int,
 ):
-    """SSE generator in OpenAI streaming format."""
-    _transformer_lock.acquire()  # hold for entire stream so /api/story etc. get 503 instead of blocking
+    """SSE generator in OpenAI streaming format. Runs model in thread so event loop is not blocked."""
+    out_queue = queue.Queue()
+    thread = threading.Thread(
+        target=_run_chat_stream_in_thread,
+        args=(transformer, messages, max_tokens, temperature, out_queue),
+        daemon=True,
+    )
+    thread.start()
+    first_token_logged = False
+    stream_start = time.time()
+    last_status_log = stream_start
+    STATUS_INTERVAL = 10
+    token_count = 0
+    logger.info("[v1] Calling model (if cold start: loading + prompt eval can take 1–2 min before first token)...")
     try:
-        first_token_logged = False
-        stream_start = time.time()
-        last_status_log = stream_start
-        STATUS_INTERVAL = 10  # log "still streaming" every N seconds
-        token_count = 0
-        logger.info("[v1] Calling model (if cold start: loading + prompt eval can take 1–2 min before first token)...")
-        try:
-            for token, metrics in transformer.chat_with_metrics(
-                messages, max_tokens=max_tokens, temperature=temperature,
-            ):
-                if token is not None:
-                    token_count += 1
-                    if not first_token_logged:
-                        logger.info("[v1] Streaming output...")
-                        first_token_logged = True
-                    now = time.time()
-                    if now - last_status_log >= STATUS_INTERVAL:
-                        elapsed = int(now - stream_start)
-                        logger.info("[v1] Still streaming... %ds elapsed, %d tokens so far", elapsed, token_count)
-                        last_status_log = now
-                    chunk = {
-                        "id": f"chatcmpl-{ts}",
-                        "object": "chat.completion.chunk",
-                        "created": ts,
-                        "model": model_name,
-                        "choices": [{"index": 0, "delta": {"content": token}, "finish_reason": None}],
-                    }
-                    yield f"data: {json.dumps(chunk)}\n\n"
-                    await asyncio.sleep(0)
-                elif metrics is not None:
-                    logger.info(f"[v1] Done: {metrics.completion_tokens} tok, {metrics.tokens_per_second:.1f} tok/s")
-                    final = {
-                        "id": f"chatcmpl-{ts}",
-                        "object": "chat.completion.chunk",
-                        "created": ts,
-                        "model": model_name,
-                        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-                    }
-                    yield f"data: {json.dumps(final)}\n\n"
-            yield "data: [DONE]\n\n"
-        except Exception as e:
-            logger.error(f"[v1] Stream error: {e}", exc_info=True)
-            err = {"error": {"message": str(e), "type": "server_error"}}
-            yield f"data: {json.dumps(err)}\n\n"
-            yield "data: [DONE]\n\n"
-    finally:
-        _transformer_lock.release()
+        while True:
+            kind, value = await asyncio.to_thread(out_queue.get)
+            if kind == "error":
+                logger.error(f"[v1] Stream error: {value}")
+                err = {"error": {"message": value, "type": "server_error"}}
+                yield f"data: {json.dumps(err)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+            if kind == "done":
+                break
+            if kind == "token":
+                token_count += 1
+                if not first_token_logged:
+                    logger.info("[v1] Streaming output...")
+                    first_token_logged = True
+                now = time.time()
+                if now - last_status_log >= STATUS_INTERVAL:
+                    elapsed = int(now - stream_start)
+                    logger.info("[v1] Still streaming... %ds elapsed, %d tokens so far", elapsed, token_count)
+                    last_status_log = now
+                chunk = {
+                    "id": f"chatcmpl-{ts}",
+                    "object": "chat.completion.chunk",
+                    "created": ts,
+                    "model": model_name,
+                    "choices": [{"index": 0, "delta": {"content": value}, "finish_reason": None}],
+                }
+                yield f"data: {json.dumps(chunk)}\n\n"
+                await asyncio.sleep(0)
+            elif kind == "metrics":
+                logger.info(f"[v1] Done: {value.completion_tokens} tok, {value.tokens_per_second:.1f} tok/s")
+                final = {
+                    "id": f"chatcmpl-{ts}",
+                    "object": "chat.completion.chunk",
+                    "created": ts,
+                    "model": model_name,
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                }
+                yield f"data: {json.dumps(final)}\n\n"
+        yield "data: [DONE]\n\n"
+    except asyncio.CancelledError:
+        logger.info("[v1] Stream cancelled (client disconnect)")
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -912,71 +959,79 @@ async def anthropic_stream_chat(
     messages: list[dict], max_tokens: int, temperature: float,
     model_name: str, msg_id: str,
 ):
-    """SSE generator in Anthropic streaming format."""
-    _transformer_lock.acquire()
+    """SSE generator in Anthropic streaming format. Runs model in thread so event loop is not blocked."""
+    def sse(event: str, data: dict) -> str:
+        return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+    yield sse("message_start", {
+        "type": "message_start",
+        "message": {
+            "id": msg_id, "type": "message", "role": "assistant",
+            "content": [], "model": model_name,
+            "stop_reason": None, "stop_sequence": None,
+            "usage": {"input_tokens": 0, "output_tokens": 0},
+        },
+    })
+    yield sse("content_block_start", {
+        "type": "content_block_start", "index": 0,
+        "content_block": {"type": "text", "text": ""},
+    })
+    yield sse("ping", {"type": "ping"})
+
+    out_queue = queue.Queue()
+    thread = threading.Thread(
+        target=_run_chat_stream_in_thread,
+        args=(transformer, messages, max_tokens, temperature, out_queue),
+        daemon=True,
+    )
+    thread.start()
+    output_tokens = 0
+    first_token_logged = False
+    stream_start = time.time()
+    last_status_log = stream_start
+    STATUS_INTERVAL = 10
+    logger.info("[messages] Calling model (if cold start: loading + prompt eval can take 1–2 min before first token)...")
     try:
-        def sse(event: str, data: dict) -> str:
-            return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+        while True:
+            kind, value = await asyncio.to_thread(out_queue.get)
+            if kind == "error":
+                logger.error(f"[messages] Stream error: {value}")
+                yield sse("error", {
+                    "type": "error",
+                    "error": {"type": "server_error", "message": value},
+                })
+                return
+            if kind == "done":
+                break
+            if kind == "token":
+                if not first_token_logged:
+                    logger.info("[messages] Streaming output...")
+                    first_token_logged = True
+                output_tokens += 1
+                now = time.time()
+                if now - last_status_log >= STATUS_INTERVAL:
+                    elapsed = int(now - stream_start)
+                    logger.info("[messages] Still streaming... %ds elapsed, %d tokens so far", elapsed, output_tokens)
+                    last_status_log = now
+                yield sse("content_block_delta", {
+                    "type": "content_block_delta", "index": 0,
+                    "delta": {"type": "text_delta", "text": value},
+                })
+                await asyncio.sleep(0)
+            elif kind == "metrics":
+                output_tokens = getattr(value, "completion_tokens", output_tokens)
+                logger.info(f"[messages] Done: {output_tokens} tok, {value.tokens_per_second:.1f} tok/s")
 
-        yield sse("message_start", {
-            "type": "message_start",
-            "message": {
-                "id": msg_id, "type": "message", "role": "assistant",
-                "content": [], "model": model_name,
-                "stop_reason": None, "stop_sequence": None,
-                "usage": {"input_tokens": 0, "output_tokens": 0},
-            },
+        yield sse("content_block_stop", {"type": "content_block_stop", "index": 0})
+        yield sse("message_delta", {
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+            "usage": {"output_tokens": output_tokens},
         })
-        yield sse("content_block_start", {
-            "type": "content_block_start", "index": 0,
-            "content_block": {"type": "text", "text": ""},
-        })
-        yield sse("ping", {"type": "ping"})
-
-        output_tokens = 0
-        first_token_logged = False
-        stream_start = time.time()
-        last_status_log = stream_start
-        STATUS_INTERVAL = 10  # log "still streaming" every N seconds
-        logger.info("[messages] Calling model (if cold start: loading + prompt eval can take 1–2 min before first token)...")
-        try:
-            for token, metrics in transformer.chat_with_metrics(
-                messages, max_tokens=max_tokens, temperature=temperature,
-            ):
-                if token is not None:
-                    if not first_token_logged:
-                        logger.info("[messages] Streaming output...")
-                        first_token_logged = True
-                    output_tokens += 1
-                    now = time.time()
-                    if now - last_status_log >= STATUS_INTERVAL:
-                        elapsed = int(now - stream_start)
-                        logger.info("[messages] Still streaming... %ds elapsed, %d tokens so far", elapsed, output_tokens)
-                        last_status_log = now
-                    yield sse("content_block_delta", {
-                        "type": "content_block_delta", "index": 0,
-                        "delta": {"type": "text_delta", "text": token},
-                    })
-                    await asyncio.sleep(0)
-                elif metrics is not None:
-                    output_tokens = getattr(metrics, "completion_tokens", output_tokens)
-                    logger.info(f"[messages] Done: {output_tokens} tok, {metrics.tokens_per_second:.1f} tok/s")
-
-            yield sse("content_block_stop", {"type": "content_block_stop", "index": 0})
-            yield sse("message_delta", {
-                "type": "message_delta",
-                "delta": {"stop_reason": "end_turn", "stop_sequence": None},
-                "usage": {"output_tokens": output_tokens},
-            })
-            yield sse("message_stop", {"type": "message_stop"})
-        except Exception as e:
-            logger.error(f"[messages] Stream error: {e}", exc_info=True)
-            yield sse("error", {
-                "type": "error",
-                "error": {"type": "server_error", "message": str(e)},
-            })
-    finally:
-        _transformer_lock.release()
+        yield sse("message_stop", {"type": "message_stop"})
+    except asyncio.CancelledError:
+        logger.info("[messages] Stream cancelled (client disconnect)")
+        raise
 
 
 if __name__ == "__main__":
