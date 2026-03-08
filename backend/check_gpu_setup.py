@@ -40,7 +40,7 @@ def _venv_python(backend_dir: Path) -> Path | None:
     return p if p.exists() else None
 
 def _run_with_venv_if_needed() -> None:
-    """If not already running under backend venv, re-exec with venv Python so deps (fastapi, etc.) are available."""
+    """If not already running under backend venv, re-run with venv Python so deps (fastapi, etc.) are available."""
     backend_dir = _backend_dir()
     venv_py = _venv_python(backend_dir)
     if venv_py is None:
@@ -52,8 +52,8 @@ def _run_with_venv_if_needed() -> None:
         return
     if current == venv_path:
         return
-    os.execv(str(venv_py), [str(venv_py)] + sys.argv)
-    sys.exit(0)
+    # Use subprocess (os.execv is unreliable on Windows)
+    sys.exit(subprocess.call([str(venv_py)] + sys.argv))
 
 def _load_env():
     backend_dir = _backend_dir()
@@ -252,16 +252,22 @@ def main() -> int:
                 stream=False,
             )
             print(f"  Response: {reply!r}")
+            # Measure GPU memory *before* shutdown so we see actual use (shutdown frees VRAM)
+            mem_after = _get_nvidia_smi_memory_mb()
             if isinstance(trans, LlamaServerTransformer):
                 trans.shutdown()
+        else:
+            mem_after = None
     except Exception as e:
         print(f"  Error: {e}")
         import traceback
         traceback.print_exc()
         return 1
 
-    time.sleep(0.5)
-    mem_after = _get_nvidia_smi_memory_mb()
+    if used_server:
+        time.sleep(0.5)
+        mem_after = _get_nvidia_smi_memory_mb()
+    # else: mem_after already set before shutdown (in-process)
 
     print()
     if nvidia_ok and mem_before is not None and mem_after is not None:
