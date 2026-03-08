@@ -1016,7 +1016,7 @@ class LlamaServerTransformer:
             print(f"{'='*60}")
             print(f"Model: {model_path}")
             print(f"Context: {n_ctx}  GPU layers: {n_gpu_layers}")
-            print(f"Idle timeout: {self.IDLE_TIMEOUT_S}s (set LFM_IDLE_TIMEOUT to change)")
+            print(f"Idle timeout: {self.IDLE_TIMEOUT_S}s (set LFM_IDLE_TIMEOUT in .env to change)")
             print(f"llama-server port: {self.LLAMA_SERVER_PORT}")
             print(f"{'='*60}")
             print("✓ Ready (llama-server will start on first request)\n")

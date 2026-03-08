@@ -73,6 +73,7 @@ Copy `backend/.env.example` to `backend/.env` and set paths to your **downloaded
 | `enable_image` | `1` | Enable image model. `0` = disable. |
 | `enable_video` | `1` | Enable video model. `0` = disable. |
 | `gpu_unload_after_idle_sec` | `30` | Unload image or video from GPU after N seconds idle (0 = keep loaded). |
+| `LFM_IDLE_TIMEOUT` | `300` | When using **llama-server** (LFM2, Qwen, Mistral, custom): stop the subprocess after N seconds with no text/chat requests to free RAM/VRAM. `0` = never auto-stop. Only applies when text backend is llama-server. |
 | `gpu_allow_image_and_video_concurrent` | `0` | `1` = allow image and video loaded at same time (needs enough VRAM). `0` = only one at a time. |
 | `text_lazy_load` | `1` | `1` = load text/LLM on first chat request (saves RAM/VRAM until needed). `0` = load at startup. |
 | `port` | `8000` | Backend server port. |
@@ -90,6 +91,7 @@ Run **all four** models; resources are used **only when that model is asked**, o
 - **`text_lazy_load=1`** — Text/LLM loads on first chat/story request, not at startup. Saves RAM/VRAM until you use chat.
 - **`gpu_allow_image_and_video_concurrent=0`** — Only one of image or video on GPU at a time. Use this for 8GB VRAM.
 - **`gpu_unload_after_idle_sec=30`** — After 30s without image (or video) requests, that model unloads from GPU so the other can load when you call it.
+- **`LFM_IDLE_TIMEOUT=300`** (or e.g. `60`) — When you use llama-server for text (LFM2, Qwen, Mistral, custom), it stops the subprocess after this many seconds with no chat/story requests, freeing RAM/VRAM. Set in `.env`; default 300. Use `0` to keep it running indefinitely.
 
 Server starts with minimal use. First chat → text loads. First image → image loads on GPU; after 30s idle it unloads. First video → video loads (image unloads if loaded); after 30s idle it unloads. TTS loads on first TTS request.
 

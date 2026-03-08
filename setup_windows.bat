@@ -569,8 +569,8 @@ if exist "llama-cpp\llama-server.exe" (
       "    Write-Host ('Archive mismatch, re-downloading. Existing=' + $existingSize + ' bytes, Expected=' + $expectedSize + ' bytes')" ^
       "  }" ^
       "};" ^
-      "if (Test-Path $extractTmp) { Remove-Item $extractTmp -Recurse -Force };" ^
-      "if (Test-Path $targetDir) { Remove-Item $targetDir -Recurse -Force };" ^
+      "if ^(Test-Path $extractTmp^) { Remove-Item $extractTmp -Recurse -Force };" ^
+      "if ^(Test-Path $targetDir^) { Remove-Item $targetDir -Recurse -Force };" ^
       "New-Item -ItemType Directory -Path $targetDir -Force | Out-Null;" ^
       "if ($needDownload) { Write-Host ('Downloading ' + [math]::Round($expectedSize/1MB,1) + ' MB ...'); Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archivePath -UseBasicParsing; Write-Host 'Download complete.' };" ^
       "Write-Host ('Extracting: ' + $archivePath + ' (' + [math]::Round((Get-Item $archivePath).Length/1MB,1) + ' MB)');" ^
