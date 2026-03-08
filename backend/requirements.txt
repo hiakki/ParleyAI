@@ -1,5 +1,8 @@
 # ParleyAI backend dependencies
 
+# Load .env
+python-dotenv>=1.0.0
+
 # LLM Engine
 llama-cpp-python>=0.2.90
 

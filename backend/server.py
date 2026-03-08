@@ -6,6 +6,13 @@ FastAPI backend providing REST API and Server-Sent Events (SSE) for streaming
 chat responses from local GGUF models (Llama 3.3 70B, LFM2-24B, etc.).
 """
 
+# Load .env first so all config is from backend/.env
+from pathlib import Path as _Path
+_env_file = _Path(__file__).resolve().parent / ".env"
+if _env_file.exists():
+    import dotenv
+    dotenv.load_dotenv(_env_file)
+
 import os
 import json
 import asyncio
@@ -27,6 +34,28 @@ from pydantic import BaseModel
 
 from llama_transformer import LlamaTransformer, LlamaServerTransformer, get_transformer, PerfMetrics, MODEL_FAMILIES
 
+# Optional: TTS, image, video (lazy-loaded). Only register routes if deps available.
+_tts_available = False
+try:
+    import edge_tts  # noqa: F401
+    from runners.tts import TTSRunner
+    _tts_available = True
+except ImportError:
+    pass
+
+_image_video_available = False
+_resource_manager = None
+_image_runner = None
+_video_runner = None
+_tts_runner = None
+try:
+    from resource_manager import ResourceManager, GPUSlot
+    from runners.image import ImageRunner
+    from runners.video import VideoRunner
+    _image_video_available = True
+except ImportError as e:
+    logger.debug("Optional runners (image/video) not available: %s", e)
+
 # Setup logging
 LOG_DIR = Path(__file__).parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
@@ -47,13 +76,27 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# Configuration from environment
-MODEL_FAMILY = os.getenv("MODEL_FAMILY", "Llama-3.3-70B-Instruct")
-QUANT = os.getenv("QUANT", "Q4_K_M")
-MODEL_PATH_ENV = os.getenv("MODEL_PATH", None)
-CTX = int(os.getenv("CTX", "2048"))
-GPU_LAYERS = int(os.getenv("GPU_LAYERS", "-1"))
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "512"))
+# Configuration from environment (.env or os.environ); prefer *_text / *_image / *_video / *_tts names
+MODEL_FAMILY = os.getenv("model_family_text") or os.getenv("MODEL_FAMILY", "Llama-3.3-70B-Instruct")
+QUANT = os.getenv("quant_text") or os.getenv("QUANT", "Q4_K_M")
+MODEL_PATH_ENV = os.getenv("model_path_text") or os.getenv("MODEL_PATH", None)
+CTX = int(os.getenv("ctx_text") or os.getenv("CTX", "2048"))
+GPU_LAYERS = int(os.getenv("gpu_layers_text") or os.getenv("GPU_LAYERS", "-1"))
+BATCH_SIZE = int(os.getenv("batch_size_text") or os.getenv("BATCH_SIZE", "512"))
+
+
+def _env_bool(name: str, default: bool = True) -> bool:
+    v = (os.getenv(name) or os.getenv(name.upper()) or ("1" if default else "0")).lower()
+    return v in ("1", "true", "yes", "on")
+
+
+ENABLE_TEXT = _env_bool("enable_text", True)
+ENABLE_TTS = _env_bool("enable_tts", True)
+ENABLE_IMAGE = _env_bool("enable_image", True)
+ENABLE_VIDEO = _env_bool("enable_video", True)
+GPU_ALLOW_IMAGE_VIDEO_CONCURRENT = _env_bool("gpu_allow_image_and_video_concurrent", False)
+# When 1, text/LLM loads on first chat request (saves RAM/VRAM until needed; recommended for 8GB VRAM).
+TEXT_LAZY_LOAD = _env_bool("text_lazy_load", True)
 
 # Resolve MODEL_PATH - handle directory vs file (filename depends on model_family)
 def _find_split_first_part(directory: str, stem: str) -> str | None:
@@ -134,41 +177,73 @@ def resolve_model_path(path_env: str | None, quant: str, model_family: str) -> s
 
 MODEL_PATH = resolve_model_path(MODEL_PATH_ENV, QUANT, MODEL_FAMILY)
 
-# Global transformer instance
+# Global transformer instance (loaded at startup or on first request when text_lazy_load=1)
 transformer: Optional[LlamaTransformer] = None
+_transformer_lock = asyncio.Lock()
+
+
+async def ensure_text_loaded() -> None:
+    """Load the text/LLM model on first use when text_lazy_load=1. Idempotent."""
+    global transformer
+    if not ENABLE_TEXT or transformer is not None:
+        return
+    async with _transformer_lock:
+        if transformer is not None:
+            return
+        logger.info("Loading text model on first request...")
+        try:
+            trans = await asyncio.to_thread(
+                get_transformer,
+                quantization=QUANT,
+                model_path=MODEL_PATH,
+                model_family=MODEL_FAMILY,
+                n_ctx=CTX,
+                n_gpu_layers=GPU_LAYERS,
+                n_batch=BATCH_SIZE,
+            )
+            transformer = trans
+            logger.info("Text model loaded successfully")
+        except Exception as e:
+            logger.error("Failed to load text model: %s", e)
+            raise
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize the transformer on startup."""
+    """Initialize the transformer on startup when enable_text=1 and text_lazy_load=0; else load on first request."""
     global transformer
     logger.info("=" * 60)
     logger.info("Initializing Backend Server")
     logger.info("=" * 60)
-    logger.info(f"Model family: {MODEL_FAMILY} ({MODEL_FAMILIES.get(MODEL_FAMILY, {}).get('name', '')})")
+    logger.info("Enabled: text=%s tts=%s image=%s video=%s", ENABLE_TEXT, ENABLE_TTS, ENABLE_IMAGE, ENABLE_VIDEO)
+    if ENABLE_TEXT:
+        logger.info(f"Model family: {MODEL_FAMILY} ({MODEL_FAMILIES.get(MODEL_FAMILY, {}).get('name', '')})")
+        logger.info(f"Quantization: {QUANT}")
+        logger.info(f"Context: {CTX} tokens")
+        logger.info(f"Batch Size: {BATCH_SIZE}")
+        logger.info(f"GPU Layers: {GPU_LAYERS}")
+        logger.info("Optimizations: Flash Attention enabled, KV Offload enabled")
+        if MODEL_PATH:
+            logger.info(f"Model Path: {MODEL_PATH}")
+        if TEXT_LAZY_LOAD:
+            logger.info("Text model will load on first chat/story request (text_lazy_load=1)")
+        else:
+            try:
+                transformer = get_transformer(
+                    quantization=QUANT,
+                    model_path=MODEL_PATH,
+                    model_family=MODEL_FAMILY,
+                    n_ctx=CTX,
+                    n_gpu_layers=GPU_LAYERS,
+                    n_batch=BATCH_SIZE,
+                )
+                logger.info("Text model loaded successfully")
+            except Exception as e:
+                logger.error(f"Failed to load model: {e}")
+                raise
+    else:
+        logger.info("Text model disabled (enable_text=0)")
     logger.info(f"Log file: {log_filename}")
-    logger.info(f"Quantization: {QUANT}")
-    logger.info(f"Context: {CTX} tokens")
-    logger.info(f"Batch Size: {BATCH_SIZE}")
-    logger.info(f"GPU Layers: {GPU_LAYERS}")
-    logger.info("Optimizations: Flash Attention enabled, KV Offload enabled")
-    if MODEL_PATH:
-        logger.info(f"Model Path: {MODEL_PATH}")
-    
-    try:
-        transformer = get_transformer(
-            quantization=QUANT,
-            model_path=MODEL_PATH,
-            model_family=MODEL_FAMILY,
-            n_ctx=CTX,
-            n_gpu_layers=GPU_LAYERS,
-            n_batch=BATCH_SIZE,
-        )
-        logger.info("Model loaded successfully")
-    except Exception as e:
-        logger.error(f"Failed to load model: {e}")
-        raise
-    
     logger.info("Server ready")
     yield
     logger.info("Shutting down...")
@@ -223,16 +298,22 @@ async def root():
     """Health check endpoint."""
     return {
         "status": "ok",
-        "model_family": MODEL_FAMILY,
-        "model": MODEL_FAMILIES.get(MODEL_FAMILY, {}).get("name", MODEL_FAMILY),
-        "quantization": QUANT,
-        "context_window": CTX,
+        "enabled": {"text": ENABLE_TEXT, "tts": ENABLE_TTS, "image": ENABLE_IMAGE, "video": ENABLE_VIDEO},
+        "model_family": MODEL_FAMILY if ENABLE_TEXT else None,
+        "model": MODEL_FAMILIES.get(MODEL_FAMILY, {}).get("name", MODEL_FAMILY) if ENABLE_TEXT else None,
+        "quantization": QUANT if ENABLE_TEXT else None,
+        "context_window": CTX if ENABLE_TEXT else None,
     }
 
 
 @app.get("/api/models")
 async def list_models():
     """List available quantization options for the current model family."""
+    if not ENABLE_TEXT:
+        raise HTTPException(status_code=503, detail="Text model disabled (enable_text=0)")
+    await ensure_text_loaded()
+    if transformer is None:
+        raise HTTPException(status_code=503, detail="Text model not loaded")
     quants = MODEL_FAMILIES.get(MODEL_FAMILY, {}).get("quants", {})
     return {
         "model_family": MODEL_FAMILY,
@@ -257,9 +338,14 @@ async def chat(request: ChatRequest):
     If stream=True, returns Server-Sent Events (SSE).
     If stream=False, returns complete response as JSON.
     """
+    if not ENABLE_TEXT or transformer is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Text model disabled (enable_text=0) or not loaded",
+        )
+    await ensure_text_loaded()
     if transformer is None:
-        logger.error("Chat request received but model not loaded")
-        raise HTTPException(status_code=503, detail="Model not loaded")
+        raise HTTPException(status_code=503, detail="Text model not loaded")
     
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
     
@@ -325,8 +411,11 @@ async def stream_chat(
 @app.post("/api/generate")
 async def generate(prompt: str, max_tokens: int = 512, temperature: float = 0.7):
     """Raw text generation endpoint (non-chat format)."""
+    if not ENABLE_TEXT or transformer is None:
+        raise HTTPException(status_code=503, detail="Text model disabled (enable_text=0) or not loaded")
+    await ensure_text_loaded()
     if transformer is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
+        raise HTTPException(status_code=503, detail="Text model not loaded")
     
     response = transformer.generate(
         prompt,
@@ -335,6 +424,138 @@ async def generate(prompt: str, max_tokens: int = 512, temperature: float = 0.7)
         stream=False,
     )
     return {"response": response}
+
+
+# --- Optional: story (script JSON), TTS, image, video (lazy-loaded when deps installed) ---
+
+def _get_resource_manager():
+    global _resource_manager
+    if not _image_video_available:
+        return None
+    if _resource_manager is None:
+        idle = float(os.getenv("gpu_unload_after_idle_sec") or os.getenv("GPU_UNLOAD_AFTER_IDLE_SEC", "30") or "30")
+        from resource_manager import ResourceManager
+        _resource_manager = ResourceManager(
+            unload_gpu_after_idle_sec=idle if idle > 0 else None,
+            allow_image_video_concurrent=GPU_ALLOW_IMAGE_VIDEO_CONCURRENT,
+        )
+    return _resource_manager
+
+
+def _get_tts_runner():
+    global _tts_runner
+    if _tts_runner is None and _tts_available:
+        from runners.tts import TTSRunner
+        rm = _get_resource_manager() if _image_video_available else None
+        _tts_runner = TTSRunner(resource_manager=rm)
+    return _tts_runner
+
+
+def _get_image_runner():
+    global _image_runner
+    if _image_runner is None and _image_video_available:
+        from runners.image import ImageRunner
+        _image_runner = ImageRunner(resource_manager=_get_resource_manager())
+    return _image_runner
+
+
+def _get_video_runner():
+    global _video_runner
+    if _video_runner is None and _image_video_available:
+        from runners.video import VideoRunner
+        _video_runner = VideoRunner(resource_manager=_get_resource_manager())
+    return _video_runner
+
+
+class StoryRequest(BaseModel):
+    prompt: str
+    system: Optional[str] = None
+    max_tokens: int = 4096
+
+
+class TTSRequest(BaseModel):
+    text: str
+    voice_id: Optional[str] = None
+    language: Optional[str] = None
+
+
+class ImageRequest(BaseModel):
+    prompt: str
+    negative_prompt: Optional[str] = None
+    width: int = 512
+    height: int = 512
+
+
+class VideoRequest(BaseModel):
+    image_path: str
+    prompt: Optional[str] = None
+    num_frames: int = 25
+    fps: int = 6
+
+
+@app.post("/api/story")
+async def api_story(req: StoryRequest):
+    """Generate story/script as JSON. Uses the same LLM."""
+    if not ENABLE_TEXT or transformer is None:
+        raise HTTPException(status_code=503, detail="Text model disabled (enable_text=0) or not loaded")
+    await ensure_text_loaded()
+    if transformer is None:
+        raise HTTPException(status_code=503, detail="Text model not loaded")
+    system = req.system or "You are a scriptwriter. Respond with valid JSON only: { title, description, hashtags, scenes: [{ text, visualDescription }] }."
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": req.prompt}]
+    raw = transformer.chat(messages, max_tokens=req.max_tokens, temperature=0.95, stream=False)
+    raw = raw.strip()
+    if "```json" in raw:
+        raw = raw.split("```json", 1)[1].split("```", 1)[0].strip()
+    elif "```" in raw:
+        raw = raw.split("```", 1)[1].split("```", 1)[0].strip()
+    try:
+        out = json.loads(raw)
+    except json.JSONDecodeError:
+        out = {"title": "Untitled", "description": "", "hashtags": [], "scenes": [{"text": raw[:500], "visualDescription": "Scene"}]}
+    scenes = out.get("scenes") or []
+    if not isinstance(scenes, list):
+        scenes = []
+    return {"data": {"title": out.get("title") or "Untitled", "description": out.get("description") or "", "hashtags": out.get("hashtags") or [], "scenes": [{"text": s.get("text", ""), "visualDescription": s.get("visualDescription", "")} for s in scenes]}}
+
+
+if _tts_available or _image_video_available:
+    @app.post("/api/tts")
+    async def api_tts(req: TTSRequest):
+        if not ENABLE_TTS:
+            raise HTTPException(status_code=503, detail="TTS disabled (enable_tts=0)")
+        if not _tts_available:
+            raise HTTPException(status_code=503, detail="TTS not available; pip install edge-tts")
+        runner = _get_tts_runner()
+        path, duration_sec = await runner.generate(req.text, voice_id=req.voice_id, language=req.language)
+        return {"audio_path": path, "duration_sec": duration_sec}
+
+if _image_video_available:
+    @app.post("/api/image")
+    async def api_image(req: ImageRequest):
+        if not ENABLE_IMAGE:
+            raise HTTPException(status_code=503, detail="Image model disabled (enable_image=0)")
+        if not GPU_ALLOW_IMAGE_VIDEO_CONCURRENT:
+            vr = _get_video_runner()
+            if vr.is_loaded:
+                await vr.unload()
+        ir = _get_image_runner()
+        path = await ir.generate(req.prompt, negative_prompt=req.negative_prompt, width=req.width, height=req.height)
+        return {"image_path": path}
+
+    @app.post("/api/video")
+    async def api_video(req: VideoRequest):
+        if not ENABLE_VIDEO:
+            raise HTTPException(status_code=503, detail="Video model disabled (enable_video=0)")
+        if not Path(req.image_path).exists():
+            raise HTTPException(status_code=400, detail="image_path not found")
+        if not GPU_ALLOW_IMAGE_VIDEO_CONCURRENT:
+            ir = _get_image_runner()
+            if ir.is_loaded:
+                await ir.unload()
+        vr = _get_video_runner()
+        path = await vr.generate(req.image_path, prompt=req.prompt, num_frames=req.num_frames, fps=req.fps)
+        return {"video_path": path}
 
 
 # ---------------------------------------------------------------------------
@@ -374,6 +595,11 @@ class OpenAIChatRequest(BaseModel):
 @app.get("/v1/models")
 async def openai_list_models():
     """OpenAI-compatible model list."""
+    if not ENABLE_TEXT or transformer is None:
+        raise HTTPException(status_code=503, detail="Text model disabled (enable_text=0) or not loaded")
+    await ensure_text_loaded()
+    if transformer is None:
+        raise HTTPException(status_code=503, detail="Text model not loaded")
     family = MODEL_FAMILIES.get(MODEL_FAMILY, {})
     return {
         "object": "list",
@@ -398,8 +624,12 @@ async def openai_chat_completions(request: OpenAIChatRequest):
     OpenAI Python SDK, curl, etc.).  Wakes up llama-server automatically if
     it was idle-stopped.
     """
+    if not ENABLE_TEXT or transformer is None:
+        raise HTTPException(status_code=503, detail="Text model disabled (enable_text=0) or not loaded")
+
+    await ensure_text_loaded()
     if transformer is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
+        raise HTTPException(status_code=503, detail="Text model not loaded")
 
     messages = [{"role": m.role, "content": (m.content or "")} for m in request.messages]
     messages = [m for m in messages if m["content"] and isinstance(m["content"], str)]
@@ -523,8 +753,12 @@ async def anthropic_messages(request: AnthropicMessagesRequest):
     Claude Code CLI sets ANTHROPIC_BASE_URL and sends requests here.
     Wakes up llama-server automatically if it was idle-stopped.
     """
+    if not ENABLE_TEXT or transformer is None:
+        raise HTTPException(status_code=503, detail="Text model disabled (enable_text=0) or not loaded")
+
+    await ensure_text_loaded()
     if transformer is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
+        raise HTTPException(status_code=503, detail="Text model not loaded")
 
     messages = _extract_anthropic_messages(request)
     user_msg = next((m["content"][:100] for m in messages if m["role"] == "user"), "")
@@ -613,5 +847,5 @@ async def anthropic_stream_chat(
 if __name__ == "__main__":
     import uvicorn
     
-    port = int(os.getenv("PORT", "8000"))
+    port = int(os.getenv("port") or os.getenv("PORT", "8000"))
     uvicorn.run(app, host="127.0.0.1", port=port)

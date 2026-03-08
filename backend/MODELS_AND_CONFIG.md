@@ -1,0 +1,109 @@
+# ParleyAI — Models and config (all in `backend/.env`)
+
+Copy `backend/.env.example` to `backend/.env` and set paths to your **downloaded** models. The backend loads `.env` on startup; every model and param is configurable there. **Works on Linux, Windows, and macOS** — use forward slashes or OS-native paths (e.g. `C:\Models\...` on Windows; Python accepts both). For **which models to use** (text, TTS, image, video) and **% comparison vs global models**, see **`MODEL_RECOMMENDATIONS.md`**.
+
+---
+
+## 1. Text / LLM (story, chat)
+
+| Variable | Example | Meaning |
+|----------|---------|--------|
+| `model_path_text` | `/path/to/local-llms` or `/path/to/model.gguf` | Path to GGUF file or directory. If directory, resolution uses `model_family_text` + `quant_text`. |
+| `model_family_text` | `Qwen2.5-32B-Instruct` | Family when `model_path_text` is a directory (same as `MODEL_FAMILY`). |
+| `quant_text` | `Q5_K_M` | Quant when `model_path_text` is a directory. |
+| `ctx_text` | `4096` | Context window (tokens). Must be ≥ prompt + max_tokens; story API uses max_tokens=4096, so use 4096 for 30–90 sec stories (many scenes). 2048 can truncate. |
+| `gpu_layers_text` | `-1` | GPU layers (-1 = auto). |
+| `batch_size_text` | `512` | Batch size. |
+
+**Path resolution when `model_path_text` is a directory:**  
+`{model_path_text}/{model_family_text}/{quant_text}/` → then `{model_path_text}/{model_family_text}/` → then `{model_path_text}/` (first matching `.gguf`).
+
+**Legacy (still supported):** `MODEL_PATH`, `MODEL_FAMILY`, `QUANT`, `CTX`, `GPU_LAYERS`, `BATCH_SIZE`.
+
+---
+
+## 2. TTS
+
+| Variable | Example | Meaning |
+|----------|---------|--------|
+| `tts_engine` | `edge` or `piper` | `edge` = no local file. `piper` = use local Piper voice. |
+| `model_path_tts` | `/path/to/voice.onnx` | Path to Piper `.onnx` voice file (required if `tts_engine=piper`). |
+| `voice_id_tts` | `en_US-lessac-medium` | Voice name (Piper / edge). |
+
+**Legacy:** `TTS_ENGINE`, `PIPER_VOICE_PATH`, `PIPER_VOICE`.
+
+---
+
+## 3. Image (text-to-image)
+
+| Variable | Example | Meaning |
+|----------|---------|--------|
+| `model_path_image` | `/path/to/stable-diffusion-v1-5` or `runwayml/stable-diffusion-v1-5` | Local path to diffusers model dir, or Hugging Face model id. |
+| `width_image` | `512` | Default image width. |
+| `height_image` | `512` | Default image height. |
+| `steps_image` | `25` | Inference steps. |
+| `cuda_visible_devices_image` | (empty) or `-1` | Set to `-1` to force CPU for image. |
+
+**Legacy:** `IMAGE_MODEL_ID`, `CUDA_VISIBLE_DEVICES`.
+
+---
+
+## 4. Video (image-to-video)
+
+| Variable | Example | Meaning |
+|----------|---------|--------|
+| `model_path_video` | `/path/to/stable-video-diffusion-img2vid-xt` or HF id | Local path to SVD model dir, or Hugging Face model id. |
+| `num_frames_video` | `25` | Frames per clip. |
+| `fps_video` | `6` | FPS for output. |
+| `decode_chunk_size_video` | `8` | Decode chunk size. |
+| `motion_bucket_id_video` | `127` | Motion bucket id. |
+| `noise_aug_strength_video` | `0.02` | Noise augmentation. |
+| `cuda_visible_devices_video` | (empty) or `-1` | Set to `-1` to force CPU for video. |
+
+**Legacy:** `VIDEO_MODEL_ID`, `CUDA_VISIBLE_DEVICES`.
+
+---
+
+## 5. Shared / server
+
+| Variable | Example | Meaning |
+|----------|---------|--------|
+| `enable_text` | `1` | Enable text/LLM (chat, story, /v1). `0` = disable. |
+| `enable_tts` | `1` | Enable TTS. `0` = disable. |
+| `enable_image` | `1` | Enable image model. `0` = disable. |
+| `enable_video` | `1` | Enable video model. `0` = disable. |
+| `gpu_unload_after_idle_sec` | `30` | Unload image or video from GPU after N seconds idle (0 = keep loaded). |
+| `gpu_allow_image_and_video_concurrent` | `0` | `1` = allow image and video loaded at same time (needs enough VRAM). `0` = only one at a time. |
+| `text_lazy_load` | `1` | `1` = load text/LLM on first chat request (saves RAM/VRAM until needed). `0` = load at startup. |
+| `port` | `8000` | Backend server port. |
+
+**Legacy:** `GPU_UNLOAD_AFTER_IDLE_SEC`, `PORT`.
+
+You can run **any combination** of models: set only the ones you want (e.g. `enable_text=1`, `enable_tts=1`, `enable_image=0`, `enable_video=0` for text + TTS only). Disabled routes return 503.
+
+---
+
+## Recommended for i7 + 32GB RAM + 8GB VRAM (e.g. RTX 4070)
+
+Run **all four** models; resources are used **only when that model is asked**, otherwise stay idle:
+
+- **`text_lazy_load=1`** — Text/LLM loads on first chat/story request, not at startup. Saves RAM/VRAM until you use chat.
+- **`gpu_allow_image_and_video_concurrent=0`** — Only one of image or video on GPU at a time. Use this for 8GB VRAM.
+- **`gpu_unload_after_idle_sec=30`** — After 30s without image (or video) requests, that model unloads from GPU so the other can load when you call it.
+
+Server starts with minimal use. First chat → text loads. First image → image loads on GPU; after 30s idle it unloads. First video → video loads (image unloads if loaded); after 30s idle it unloads. TTS loads on first TTS request.
+
+---
+
+## Quick reference (all in `backend/.env`)
+
+| Slot | Path variable | Main params |
+|------|----------------|-------------|
+| **Text** | `model_path_text` | `model_family_text`, `quant_text`, `ctx_text`, `gpu_layers_text`, `batch_size_text` |
+| **TTS** | `model_path_tts` | `tts_engine`, `voice_id_tts` |
+| **Image** | `model_path_image` | `width_image`, `height_image`, `steps_image`, `cuda_visible_devices_image` |
+| **Video** | `model_path_video` | `num_frames_video`, `fps_video`, `decode_chunk_size_video`, `motion_bucket_id_video`, `noise_aug_strength_video`, `cuda_visible_devices_video` |
+
+**Enable/disable:** `enable_text`, `enable_tts`, `enable_image`, `enable_video` (1 or 0). **Concurrent image+video:** `gpu_allow_image_and_video_concurrent=1` when you have enough VRAM.
+
+Use **local paths** for downloaded models (e.g. `model_path_image=/home/user/models/stable-diffusion-v1-5`). Diffusers loads from that path; for HF ids it uses the cache.

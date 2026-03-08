@@ -547,13 +547,13 @@ class LlamaTransformer:
         try:
             # Initialize llama.cpp model with optimized settings for Apple Silicon
             # Note: verbose=False suppresses llama.cpp internal output (1000+ lines)
-            self.llm = Llama(
-                model_path=model_path,
-                n_ctx=n_ctx,
-                n_batch=n_batch,
-                n_gpu_layers=n_gpu_layers,
-                use_mmap=use_mmap,
-                use_mlock=use_mlock,
+        self.llm = Llama(
+            model_path=model_path,
+            n_ctx=n_ctx,
+            n_batch=n_batch,
+            n_gpu_layers=n_gpu_layers,
+            use_mmap=use_mmap,
+            use_mlock=use_mlock,
                 verbose=False,
                 
                 # === PERFORMANCE OPTIMIZATIONS ===
@@ -628,7 +628,7 @@ class LlamaTransformer:
                     print(f"Found split model: {split_parts[0]}")
                 return str(split_parts[0])
         return None
-
+    
     def _download_model(self, quant_info: dict, cache_dir: Optional[str]) -> str:
         """Download the GGUF model from Hugging Face."""
         if self.verbose:
@@ -932,8 +932,8 @@ class LlamaTransformer:
             print(f"{qname:<10} {info['size_gb']}GB{'':<6} {info['recommended_ram']:<12} {info['quality']}")
         print("-" * 70)
         if model_family == "Llama-3.3-70B-Instruct":
-            print("\n✓ Recommended for 48GB RAM: Q4_K_M (best balance)")
-            print("✓ Recommended for 16GB RAM: Q3_K_S or Q2_K")
+        print("\n✓ Recommended for 48GB RAM: Q4_K_M (best balance)")
+        print("✓ Recommended for 16GB RAM: Q3_K_S or Q2_K")
         else:
             print("\n✓ Recommended for 30–35GB RAM: Q4_K_M or Q5_K_M")
         print("  Use mmap to stream model layers from disk as needed.\n")
@@ -1333,7 +1333,7 @@ def get_transformer(
     For model_family="custom", MODEL_PATH is required.
     """
     global _transformer_instance
-
+    
     if _transformer_instance is not None:
         return _transformer_instance
 
@@ -1393,7 +1393,7 @@ def get_transformer(
             flash_attn=True,
             offload_kqv=True,
         )
-
+    
     return _transformer_instance
 
 

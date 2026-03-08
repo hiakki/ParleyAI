@@ -1,0 +1,15 @@
+# Optional: TTS, image, video (lazy-loaded). Install for /api/tts, /api/image, /api/video.
+# Core backend works without this.
+
+# TTS (lightweight)
+edge-tts>=6.1.0
+
+# Image + video (GPU; heavy)
+torch>=2.0.0
+diffusers>=0.25.0
+transformers>=4.36.0
+accelerate>=0.25.0
+safetensors>=0.4.0
+imageio>=2.31.0
+imageio-ffmpeg>=0.4.9
+Pillow>=10.0.0

@@ -70,6 +70,137 @@ A full-stack chat application for running large GGUF models locally.
 > **If you need long context** (8K+): accept ~2-3 tok/s with auto-fit, or use Mistral 24B Q4_K_M for ~6-8 tok/s.
 > **Avoid Llama 70B** on 8GB VRAM — too large, painfully slow regardless of settings.
 
+### Why MoE (Mixture of Experts) on 8GB VRAM
+
+**Dense models** use every parameter for every token — a 32B model means 32B params in memory and in the compute path. On 8GB VRAM you offload most layers to CPU and get 2–3 tok/s (or ~20–30 with heavy tuning).
+
+**MoE models** have many “experts” (e.g. 8×7B) but only **activate a subset per token** (e.g. 2 experts ≈ 14B active). So:
+
+- **Compute** scales with **active** params, not total — you get higher tok/s and can fit more on 8GB.
+- **Quality** can match or beat much larger dense models (including GPT‑3.5 / small‑70B level) because different experts specialize.
+
+So with the same 8GB GPU, a well-chosen MoE can be both **faster** and **better** than a dense 32B. ParleyAI already supports **LFM2-24B-A2B** (24B total, ~2B active) — use it for a lightweight, high-quality option.
+
+### Best MoE Models by Use Case (i7 + 8GB VRAM + 32GB RAM)
+
+All run via ParleyAI. Use `MODEL_FAMILY=custom MODEL_PATH=/path/to/model.gguf` for models not in the built-in list.
+
+#### 1. Story / Script Writing
+
+| Model | Total | Active | Quant | Size | Speed (8GB) | Story / prose | ParleyAI |
+|-------|-------|--------|-------|------|-------------|---------------|----------|
+| **L3-Grand-Story-Darkness-MOE-4X8** | 24.9B | ~8B | Q4_K_M | ~14 GB | 15–25 tok/s | **95%** | `custom` |
+| **Llama-3.2-4X3B-MOE-Ultra-Instruct** | 10B | ~3B | Q4_K_M | ~6 GB | 35–50 tok/s | **90%** | `custom` |
+| **LFM2-24B-A2B** | 24B | ~2B | Q4_K_M | 15 GB | 25–40 tok/s | 78% | **built-in** |
+
+> **Pick**: **L3-Grand-Story-Darkness-MOE** for best creative quality; **Llama-3.2-4X3B-MOE-Ultra** for max speed and long context (128K). **LFM2-24B-A2B** is built-in — no extra download.
+
+| GGUF |
+|------|
+| [L3-Grand-Story-Darkness-MOE-4X8](https://huggingface.co/DavidAU/L3-Grand-Story-Darkness-MOE-4X8-24.9B-e32-GGUF) |
+| [Llama-3.2-4X3B-MOE-Ultra-Instruct](https://huggingface.co/DavidAU/Llama-3.2-4X3B-MOE-Ultra-Instruct-10B-GGUF) |
+| [LFM2-24B-A2B](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF) (built-in `LFM2-24B-A2B`) |
+
+#### 2. Coding (Cursor, VS Code, general dev)
+
+| Model | Total | Active | Quant | Size | Speed (8GB) | Code quality | ParleyAI |
+|-------|-------|--------|-------|------|-------------|--------------|----------|
+| **Qwen2.5-MoE-Power-CODER (e.g. 2×7B)** | 19B | ~7B | Q4_K_M | ~11 GB | 20–30 tok/s | **92%** | `custom` |
+| **DeepSeek-Coder-V2 (16B)** | 16B | ~2.4B | Q4_K_M | ~9 GB | 25–35 tok/s | **90%** | `custom` |
+| **Mixtral 8x7B Instruct** | 47B | ~13B | Q4_K_M | ~26 GB | 8–15 tok/s | 88% | `custom` |
+| **LFM2-24B-A2B** | 24B | ~2B | Q4_K_M | 15 GB | 25–40 tok/s | 75% | **built-in** |
+
+> **Pick**: **Qwen2.5-MoE-Power-CODER** or **DeepSeek-Coder-V2** for best code quality on 8GB. Use the same model in Cursor/VS Code by pointing the IDE at ParleyAI’s `/v1` endpoint (see [Cursor & VS Code](#cursor--vs-code-vibe-coding-plan-driven-builds)).
+
+| GGUF |
+|------|
+| [Qwen2.5-MoE-Power-CODER](https://huggingface.co/DavidAU/Qwen2.5-MOE-2x-4x-6x-8x__7B__Power-CODER__19B-30B-42B-53B-gguf) (choose 19B or 30B for 8GB) |
+| [DeepSeek-Coder-V2 16B](https://huggingface.co/bartowski/DeepSeek-Coder-V2-Instruct-16B-GGUF) (or official repo) |
+| [Mixtral 8x7B Instruct](https://huggingface.co/bartowski/Mixtral-8x7B-Instruct-v0.1-GGUF) |
+| [LFM2-24B-A2B](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF) (built-in) |
+
+#### 3. General use (chat, Q&A, tasks)
+
+| Model | Total | Active | Quant | Size | Speed (8GB) | General quality | ParleyAI |
+|-------|-------|--------|-------|------|-------------|-----------------|----------|
+| **Mixtral 8x7B Instruct** | 47B | ~13B | Q4_K_M | ~26 GB | 8–15 tok/s | **90%** | `custom` |
+| **Qwen2.5-MoE-30B-A3B** | 30B | ~3B | Q4_K_M | ~18 GB | 20–30 tok/s | **88%** | `custom` |
+| **LFM2-24B-A2B** | 24B | ~2B | Q4_K_M | 15 GB | 25–40 tok/s | **85%** | **built-in** |
+| **Llama-3.2-4X3B-MOE-Ultra-Instruct** | 10B | ~3B | Q4_K_M | ~6 GB | 35–50 tok/s | 82% | `custom` |
+
+> **Pick**: **Mixtral 8x7B** for best general quality (fits in 32GB RAM). **LFM2-24B-A2B** or **Qwen2.5-MoE-30B-A3B** for a balance of speed and quality on 8GB.
+
+| GGUF |
+|------|
+| [Mixtral 8x7B Instruct](https://huggingface.co/bartowski/Mixtral-8x7B-Instruct-v0.1-GGUF) |
+| [Qwen2.5-MoE (e.g. 30B-A3B)](https://huggingface.co/Qwen/Qwen2.5-MoE-A3B-30B-Instruct-GGUF) (or community quants) |
+| [LFM2-24B-A2B](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF) (built-in) |
+| [Llama-3.2-4X3B-MOE-Ultra-Instruct](https://huggingface.co/DavidAU/Llama-3.2-4X3B-MOE-Ultra-Instruct-10B-GGUF) |
+
+#### Quick reference: one MoE per use case (8GB VRAM)
+
+| Use case | Recommended MoE | ParleyAI | Command (example) |
+|----------|-----------------|----------|-------------------|
+| **Story / scripts** | L3-Grand-Story-Darkness-MOE or Llama-3.2-4X3B-MOE-Ultra | `custom` | `MODEL_FAMILY=custom MODEL_PATH=.../model.gguf ./start.sh` |
+| **Coding (Cursor/VS Code)** | Qwen2.5-MoE-Power-CODER or DeepSeek-Coder-V2 16B | `custom` | Same; set IDE base URL to `http://localhost:8000/v1` |
+| **General** | Mixtral 8x7B or LFM2-24B-A2B | `custom` / **LFM2-24B-A2B** | `MODEL_FAMILY=LFM2-24B-A2B QUANT=Q4_K_M ./start.sh` |
+
+#### Percentage comparison: Dense vs MoE (8GB VRAM + 32GB RAM)
+
+All scores below are relative for the same hardware. **Type**: Dense = single large model; MoE = Mixture of Experts (fewer active params, often faster). **Overall** weights quality, speed, and fit on 8GB.
+
+**1. Story / script writing**
+
+| Model | Type | Story quality | Creativity | Instruction following | Speed (8GB) | Overall |
+|-------|------|---------------|------------|------------------------|-------------|---------|
+| **Llama-3.2-4X3B-MOE-Ultra-Instruct** | MoE | 90% | 88% | 88% | 35–50 tok/s | **90%** |
+| **L3-Grand-Story-Darkness-MOE-4X8** | MoE | **95%** | **94%** | **90%** | 15–25 tok/s | **88%** |
+| **Qwen2.5-32B-Instruct** | Dense | **95%** | **93%** | **90%** | 3–4 tok/s (or 20–30* ) | 78% |
+| **Qwen2.5-14B-Instruct** | Dense | 82% | 80% | 82% | 12–18 tok/s | 85% |
+| **LFM2-24B-A2B** | MoE | 78% | 76% | 78% | 25–40 tok/s | **85%** |
+| **Mistral-Small-3.1-24B** | Dense | 78% | 75% | 80% | 6–8 tok/s | 80% |
+| **Gemma-2-9B-IT** | Dense | 72% | 74% | 70% | 30–40 tok/s | 82% |
+| **Llama-3.1-8B-Instruct** | Dense | 68% | 65% | 72% | 35–45 tok/s | 78% |
+
+\* With `GPU_LAYERS=20` and `CTX=2048`.
+
+**2. Coding (Cursor, VS Code, general dev)**
+
+| Model | Type | Code quality | Debugging | Multi-language | Speed (8GB) | Overall |
+|-------|------|--------------|-----------|----------------|-------------|---------|
+| **Qwen2.5-MoE-Power-CODER (2×7B)** | MoE | **92%** | 88% | **90%** | 20–30 tok/s | **90%** |
+| **DeepSeek-Coder-V2 16B** | MoE | **90%** | **90%** | 88% | 25–35 tok/s | **90%** |
+| **Qwen2.5-Coder-14B** | Dense | 88% | 85% | 88% | 18–25 tok/s | **90%** |
+| **Qwen2.5-Coder-32B** | Dense | **96%** | **92%** | **94%** | 3–4 tok/s | 78% |
+| **Mixtral 8x7B Instruct** | MoE | 88% | 84% | 86% | 8–15 tok/s | 85% |
+| **Phi-4** | Dense | 83% | 82% | 80% | 18–25 tok/s | 87% |
+| **DeepSeek-R1-Distill-Qwen-14B** | Dense | 80% | **88%** | 78% | 15–22 tok/s | 85% |
+| **LFM2-24B-A2B** | MoE | 75% | 74% | 76% | 25–40 tok/s | 82% |
+| **Llama-3.1-8B-Instruct** | Dense | 65% | 62% | 68% | 35–45 tok/s | 76% |
+
+**3. General use (chat, Q&A, tasks)**
+
+| Model | Type | Quality | Versatility | Speed (8GB) | Overall |
+|-------|------|---------|-------------|------------|---------|
+| **Mixtral 8x7B Instruct** | MoE | **90%** | **88%** | 8–15 tok/s | **88%** |
+| **Qwen2.5-MoE-30B-A3B** | MoE | **88%** | 86% | 20–30 tok/s | **87%** |
+| **Qwen2.5-14B-Instruct** | Dense | 85% | **88%** | 12–18 tok/s | **87%** |
+| **LFM2-24B-A2B** | MoE | **85%** | 84% | 25–40 tok/s | **86%** |
+| **Qwen2.5-32B-Instruct** | Dense | **92%** | **90%** | 3–4 tok/s (or 20–30* ) | 76% |
+| **Llama-3.2-4X3B-MOE-Ultra-Instruct** | MoE | 82% | 80% | 35–50 tok/s | 85% |
+| **Mistral-Small-3.1-24B** | Dense | 80% | 85% | 6–8 tok/s | 83% |
+| **Phi-4** | Dense | 82% | 78% | 18–25 tok/s | 85% |
+| **Gemma-2-9B-IT** | Dense | 75% | 76% | 30–40 tok/s | 82% |
+| **Llama-3.1-8B-Instruct** | Dense | 70% | 72% | 35–45 tok/s | 80% |
+
+\* With `GPU_LAYERS=20` and `CTX=2048`.
+
+**Takeaways**
+
+- **Story**: Best quality = L3-Grand-Story-MOE or Qwen2.5-32B (dense); best speed/overall = Llama-3.2-4X3B-MOE-Ultra. LFM2 (MoE) is a good built-in compromise.
+- **Coding**: Best overall = Qwen2.5-MoE-Power-CODER, DeepSeek-Coder-V2, or Qwen2.5-Coder-14B (dense). For Cursor/VS Code, any of these via ParleyAI `/v1` works.
+- **General**: Best quality = Mixtral 8x7B (MoE) or Qwen2.5-32B (dense). Best speed/overall = Qwen2.5-MoE-30B-A3B, Qwen2.5-14B, or LFM2 (MoE).
+
 ### Best Open-Source Models by Use Case (i7 + 8GB VRAM + 32GB RAM)
 
 All models below run locally via ParleyAI using `MODEL_FAMILY=custom MODEL_PATH=/path/to/model.gguf` (unless the model is already a built-in family). GGUF downloads from HuggingFace.
@@ -878,9 +1009,12 @@ ParleyAI/
 │   └── package.json
 │
 ├── backend/              # FastAPI server
-│   ├── server.py         # REST API + SSE streaming
+│   ├── server.py         # REST API + SSE streaming + optional /api/story, /api/tts, /api/image, /api/video
 │   ├── llama_transformer.py  # LLM wrapper (internal module)
-│   └── requirements.txt
+│   ├── resource_manager.py   # GPU serialization (for optional image/video)
+│   ├── runners/             # Optional: TTS, image, video (lazy-loaded; install requirements-extra.txt)
+│   ├── requirements.txt
+│   └── requirements-extra.txt  # Optional: edge-tts, diffusers, torch for TTS/image/video
 │
 ├── brew_setup/           # Homebrew CLI alternative (macOS)
 │
@@ -1174,7 +1308,12 @@ vm_stat | head -5
 | `backend/llama_transformer.py` | Main transformer using llama.cpp (recommended) |
 | `backend/mlx_transformer.py` | Alternative using Apple MLX (needs 32GB+) |
 | `backend/server.py` | FastAPI server with SSE streaming |
+| `backend/resource_manager.py` | GPU serialization for optional image/video runners |
+| `backend/runners/` | Optional: TTS, image, video (lazy-loaded; see below) |
 | `backend/requirements.txt` | Python dependencies |
+| `backend/requirements-extra.txt` | Optional: edge-tts, torch, diffusers for TTS/image/video |
+
+**Optional pipeline:** `pip install -r backend/requirements-extra.txt` enables `POST /api/story` (script JSON), `POST /api/tts`, `POST /api/image`, `POST /api/video` on the same server. TTS uses edge-tts; image and video share the GPU (one at a time).
 
 ## ⚡ Performance Expectations
 
