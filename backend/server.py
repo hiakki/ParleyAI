@@ -367,6 +367,7 @@ async def chat(request: ChatRequest):
     logger.info(f"User message: {user_msg}{'...' if len(user_msg) >= 100 else ''}")
     
     if request.stream:
+        logger.info("[api/chat] Stream started (waiting for first token...)")
         return StreamingResponse(
             stream_chat(messages, request.max_tokens, request.temperature),
             media_type="text/event-stream",
@@ -390,7 +391,10 @@ async def stream_chat(
     """Generator for SSE streaming with performance metrics."""
     logger.info("Starting streaming generation...")
     token_count = 0
-    
+    first_token_logged = False
+    stream_start = time.time()
+    last_status_log = stream_start
+    STATUS_INTERVAL = 10  # log "still streaming" every N seconds
     try:
         for token, metrics in transformer.chat_with_metrics(
             messages,
@@ -398,8 +402,16 @@ async def stream_chat(
             temperature=temperature,
         ):
             if token is not None:
-                # Streaming token
+                if not first_token_logged:
+                    logger.info("[api/chat] Streaming output...")
+                    first_token_logged = True
                 token_count += 1
+                now = time.time()
+                if now - last_status_log >= STATUS_INTERVAL:
+                    elapsed = int(now - stream_start)
+                    logger.info("[api/chat] Still streaming... %ds elapsed, %d tokens so far", elapsed, token_count)
+                    last_status_log = now
+                # Streaming token
                 data = json.dumps({"token": token, "done": False})
                 yield f"data: {data}\n\n"
                 await asyncio.sleep(0)  # Allow other tasks to run
