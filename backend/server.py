@@ -7,13 +7,21 @@ chat responses from local GGUF models (Llama 3.3 70B, LFM2-24B, etc.).
 """
 
 # Load .env first so all config is from backend/.env
+import os
 from pathlib import Path as _Path
 _env_file = _Path(__file__).resolve().parent / ".env"
 if _env_file.exists():
-    import dotenv
-    dotenv.load_dotenv(_env_file)
+    try:
+        import dotenv
+        dotenv.load_dotenv(_env_file)
+    except ImportError:
+        with open(_env_file, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, _, v = line.partition("=")
+                    os.environ.setdefault(k.strip(), v.strip().strip("'\""))
 
-import os
 import json
 import asyncio
 import logging

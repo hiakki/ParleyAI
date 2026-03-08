@@ -42,7 +42,13 @@ def _load_env():
             import dotenv
             dotenv.load_dotenv(env_file)
         except ImportError:
-            pass
+            # Load .env manually so script works without python-dotenv (e.g. system Python)
+            with open(env_file, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, _, v = line.partition("=")
+                        os.environ.setdefault(k.strip(), v.strip().strip("'\""))
     return backend_dir
 
 def _get_nvidia_smi_memory_mb() -> int | None:
@@ -103,7 +109,9 @@ def main() -> int:
     except ImportError as e:
         print(f"Import error: {e}")
         print("Run from repo root: python backend/check_gpu_setup.py")
-        print("Or from backend with venv: python check_gpu_setup.py")
+        print("Or from backend with venv: venv\\Scripts\\python.exe check_gpu_setup.py  (Windows)")
+        print("                             venv/bin/python check_gpu_setup.py  (Linux/macOS)")
+        print("Or install backend deps: pip install -r requirements.txt")
         return 1
 
     if not ENABLE_TEXT:
