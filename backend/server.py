@@ -686,14 +686,24 @@ async def openai_stream_chat(
 ):
     """SSE generator in OpenAI streaming format."""
     first_token_logged = False
+    stream_start = time.time()
+    last_status_log = stream_start
+    STATUS_INTERVAL = 10  # log "still streaming" every N seconds
+    token_count = 0
     try:
         for token, metrics in transformer.chat_with_metrics(
             messages, max_tokens=max_tokens, temperature=temperature,
         ):
             if token is not None:
+                token_count += 1
                 if not first_token_logged:
                     logger.info("[v1] Streaming output...")
                     first_token_logged = True
+                now = time.time()
+                if now - last_status_log >= STATUS_INTERVAL:
+                    elapsed = int(now - stream_start)
+                    logger.info("[v1] Still streaming... %ds elapsed, %d tokens so far", elapsed, token_count)
+                    last_status_log = now
                 chunk = {
                     "id": f"chatcmpl-{ts}",
                     "object": "chat.completion.chunk",
@@ -833,6 +843,9 @@ async def anthropic_stream_chat(
 
     output_tokens = 0
     first_token_logged = False
+    stream_start = time.time()
+    last_status_log = stream_start
+    STATUS_INTERVAL = 10  # log "still streaming" every N seconds
     try:
         for token, metrics in transformer.chat_with_metrics(
             messages, max_tokens=max_tokens, temperature=temperature,
@@ -842,6 +855,11 @@ async def anthropic_stream_chat(
                     logger.info("[messages] Streaming output...")
                     first_token_logged = True
                 output_tokens += 1
+                now = time.time()
+                if now - last_status_log >= STATUS_INTERVAL:
+                    elapsed = int(now - stream_start)
+                    logger.info("[messages] Still streaming... %ds elapsed, %d tokens so far", elapsed, output_tokens)
+                    last_status_log = now
                 yield sse("content_block_delta", {
                     "type": "content_block_delta", "index": 0,
                     "delta": {"type": "text_delta", "text": token},
