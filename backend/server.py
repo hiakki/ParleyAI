@@ -581,19 +581,40 @@ async def _stream_story_sse(messages: list[dict], max_tokens: int, temperature: 
         daemon=True,
     )
     thread.start()
+    token_count = 0
+    first_token_logged = False
+    stream_start = time.time()
+    last_status_log = stream_start
+    STATUS_INTERVAL = 10
+    logger.info("[api/story] Calling model (if cold start: loading + prompt eval can take 1–2 min before first token)...")
     try:
         while True:
             kind, value = await asyncio.to_thread(out_queue.get)
             if kind == "error":
+                logger.error(f"[api/story] Stream error: {value}")
                 yield f"data: {json.dumps({'error': value, 'done': True})}\n\n"
                 return
             if kind == "done":
                 break
             if kind == "token":
+                if not first_token_logged:
+                    logger.info("[api/story] Streaming output...")
+                    first_token_logged = True
+                token_count += 1
+                now = time.time()
+                if now - last_status_log >= STATUS_INTERVAL:
+                    elapsed = int(now - stream_start)
+                    logger.info("[api/story] Still streaming... %ds elapsed, %d tokens so far", elapsed, token_count)
+                    last_status_log = now
                 yield f"data: {json.dumps({'delta': value})}\n\n"
                 await asyncio.sleep(0)
+            elif kind == "metrics":
+                logger.info("[api/story] Generation complete: %d tokens", token_count)
+                logger.info("[api/story] Performance: %.2f tok/s, prompt: %d tok @ %.2f tok/s, total: %.0fms",
+                           value.tokens_per_second, value.prompt_tokens, value.prompt_per_second, value.total_time_ms)
         yield "data: {\"done\": true}\n\n"
     except asyncio.CancelledError:
+        logger.info("[api/story] Stream cancelled (client disconnect)")
         raise
 
 
@@ -608,7 +629,12 @@ async def api_story(req: StoryRequest):
     system = req.system or "You are a scriptwriter. Respond with valid JSON only: { title, description, hashtags, scenes: [{ text, visualDescription }] }."
     messages = [{"role": "system", "content": system}, {"role": "user", "content": req.prompt}]
 
+    user_prompt_preview = (req.prompt or "")[:100]
+    logger.info("[api/story] Story request: stream=%s, max_tokens=%s", req.stream, req.max_tokens)
+    logger.info("[api/story] User prompt: %s%s", user_prompt_preview, "..." if len(req.prompt or "") > 100 else "")
+
     if req.stream:
+        logger.info("[api/story] Stream started (waiting for first token...)")
         return StreamingResponse(
             _stream_story_sse(messages, req.max_tokens, 0.95),
             media_type="text/event-stream",
@@ -621,6 +647,7 @@ async def api_story(req: StoryRequest):
             detail="Model is busy with another request (streaming or generation in progress). Please try again later.",
         )
     try:
+        logger.info("[api/story] Generating (non-streaming)...")
         raw = transformer.chat(messages, max_tokens=req.max_tokens, temperature=0.95, stream=False)
         raw = raw.strip()
         if "```json" in raw:
@@ -634,7 +661,10 @@ async def api_story(req: StoryRequest):
         scenes = out.get("scenes") or []
         if not isinstance(scenes, list):
             scenes = []
-        return {"data": {"title": out.get("title") or "Untitled", "description": out.get("description") or "", "hashtags": out.get("hashtags") or [], "scenes": [{"text": s.get("text", ""), "visualDescription": s.get("visualDescription", "")} for s in scenes]}}
+        title = out.get("title") or "Untitled"
+        logger.info("[api/story] Generation complete: title=%s, %d scenes, %d chars",
+                   title, len(scenes), len(raw))
+        return {"data": {"title": title, "description": out.get("description") or "", "hashtags": out.get("hashtags") or [], "scenes": [{"text": s.get("text", ""), "visualDescription": s.get("visualDescription", "")} for s in scenes]}}
     finally:
         _transformer_lock.release()
 
