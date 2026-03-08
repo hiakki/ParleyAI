@@ -655,6 +655,7 @@ async def openai_chat_completions(request: OpenAIChatRequest):
     ts = int(__import__("time").time())
 
     if request.stream:
+        logger.info("[v1] Stream started (waiting for first token...)")
         return StreamingResponse(
             openai_stream_chat(messages, request.max_tokens, request.temperature, model_name, ts),
             media_type="text/event-stream",
@@ -684,11 +685,15 @@ async def openai_stream_chat(
     model_name: str, ts: int,
 ):
     """SSE generator in OpenAI streaming format."""
+    first_token_logged = False
     try:
         for token, metrics in transformer.chat_with_metrics(
             messages, max_tokens=max_tokens, temperature=temperature,
         ):
             if token is not None:
+                if not first_token_logged:
+                    logger.info("[v1] Streaming output...")
+                    first_token_logged = True
                 chunk = {
                     "id": f"chatcmpl-{ts}",
                     "object": "chat.completion.chunk",
@@ -781,6 +786,7 @@ async def anthropic_messages(request: AnthropicMessagesRequest):
     msg_id = f"msg_{uuid.uuid4().hex[:24]}"
 
     if request.stream:
+        logger.info("[messages] Stream started (waiting for first token...)")
         return StreamingResponse(
             anthropic_stream_chat(messages, request.max_tokens, request.temperature, model_name, msg_id),
             media_type="text/event-stream",
@@ -826,11 +832,15 @@ async def anthropic_stream_chat(
     yield sse("ping", {"type": "ping"})
 
     output_tokens = 0
+    first_token_logged = False
     try:
         for token, metrics in transformer.chat_with_metrics(
             messages, max_tokens=max_tokens, temperature=temperature,
         ):
             if token is not None:
+                if not first_token_logged:
+                    logger.info("[messages] Streaming output...")
+                    first_token_logged = True
                 output_tokens += 1
                 yield sse("content_block_delta", {
                     "type": "content_block_delta", "index": 0,
