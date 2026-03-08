@@ -711,25 +711,29 @@ if _image_video_available:
                 await vr.unload()
         ir = _get_image_runner()
         neg = req.get_negative_prompt()
-
-        if req.scenes:
-            # NarrateAI contract: return { images: base64 string[] }
-            images_b64: list[str] = []
-            art = (req.artStylePrompt or "").strip()
-            for i, scene in enumerate(req.scenes):
-                prompt = scene.visualDescription.strip()
-                if art:
-                    prompt = f"{prompt}. {art}"
-                logger.info("[api/image] Scene %d/%d: %s...", i + 1, len(req.scenes), prompt[:80])
-                path = await ir.generate(prompt, negative_prompt=neg, width=req.width, height=req.height)
-                with open(path, "rb") as f:
-                    images_b64.append(base64.b64encode(f.read()).decode("ascii"))
-            logger.info("[api/image] Generated %d images", len(images_b64))
-            return {"images": images_b64}
-
-        # Single prompt (legacy)
-        path = await ir.generate(req.prompt, negative_prompt=neg, width=req.width, height=req.height)
-        return {"image_path": path}
+        try:
+            if req.scenes:
+                # NarrateAI contract: return { images: base64 string[] }
+                images_b64: list[str] = []
+                art = (req.artStylePrompt or "").strip()
+                for i, scene in enumerate(req.scenes):
+                    prompt = scene.visualDescription.strip()
+                    if art:
+                        prompt = f"{prompt}. {art}"
+                    logger.info("[api/image] Scene %d/%d: %s...", i + 1, len(req.scenes), prompt[:80])
+                    path = await ir.generate(prompt, negative_prompt=neg, width=req.width, height=req.height)
+                    with open(path, "rb") as f:
+                        images_b64.append(base64.b64encode(f.read()).decode("ascii"))
+                logger.info("[api/image] Generated %d images", len(images_b64))
+                return {"images": images_b64}
+            path = await ir.generate(req.prompt, negative_prompt=neg, width=req.width, height=req.height)
+            return {"image_path": path}
+        except (ModuleNotFoundError, ImportError) as e:
+            logger.warning("Image generation failed (missing deps): %s", e)
+            raise HTTPException(
+                status_code=503,
+                detail="Image generation requires PyTorch and diffusers. Install with: pip install torch diffusers",
+            ) from e
 
     @app.post("/api/video")
     async def api_video(req: VideoRequest):

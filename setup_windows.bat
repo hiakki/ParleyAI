@@ -424,6 +424,14 @@ echo [OK] llama-cpp-python ready
 echo Checking Python dependencies...
 pip install -q --upgrade -r requirements.txt
 
+echo Installing optional dependencies (TTS, image, video)...
+pip install -q --upgrade -r requirements-extra.txt
+if %ERRORLEVEL% neq 0 (
+    echo [SKIP] Some optional deps failed ^(TTS/image/video may be unavailable^)
+) else (
+    echo [OK] Optional deps installed ^(edge-tts, torch, diffusers, etc.^)
+)
+
 call deactivate
 cd ..
 echo [OK] Backend ready
