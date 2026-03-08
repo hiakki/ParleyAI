@@ -81,7 +81,9 @@ MODEL_FAMILY = os.getenv("model_family_text") or os.getenv("MODEL_FAMILY", "Llam
 QUANT = os.getenv("quant_text") or os.getenv("QUANT", "Q4_K_M")
 MODEL_PATH_ENV = os.getenv("model_path_text") or os.getenv("MODEL_PATH", None)
 CTX = int(os.getenv("ctx_text") or os.getenv("CTX", "2048"))
-GPU_LAYERS = int(os.getenv("gpu_layers_text") or os.getenv("GPU_LAYERS", "-1"))
+_gpu_layers_raw = os.getenv("gpu_layers_text") or os.getenv("GPU_LAYERS", "-1")
+GPU_LAYERS = int(_gpu_layers_raw)
+GPU_LAYERS_SOURCE = "gpu_layers_text" if os.getenv("gpu_layers_text") else ("GPU_LAYERS" if os.getenv("GPU_LAYERS") else "default")
 BATCH_SIZE = int(os.getenv("batch_size_text") or os.getenv("BATCH_SIZE", "512"))
 
 
@@ -221,7 +223,9 @@ async def lifespan(app: FastAPI):
         logger.info(f"Quantization: {QUANT}")
         logger.info(f"Context: {CTX} tokens")
         logger.info(f"Batch Size: {BATCH_SIZE}")
-        logger.info(f"GPU Layers: {GPU_LAYERS}")
+        logger.info(f"GPU Layers: {GPU_LAYERS} (from {GPU_LAYERS_SOURCE})")
+        if GPU_LAYERS > 0:
+            logger.info("If you see no GPU use: ensure llama-server is the CUDA build (Windows) or llama-cpp-python was built with CUDA; CPU-only builds ignore GPU layers.")
         logger.info("Optimizations: Flash Attention enabled, KV Offload enabled")
         if MODEL_PATH:
             logger.info(f"Model Path: {MODEL_PATH}")
