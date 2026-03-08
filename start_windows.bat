@@ -88,6 +88,21 @@ echo   ParleyAI - Windows Startup
 echo ========================================
 echo.
 
+:: Load tunnel (and optional other) vars from backend\.env if present
+if exist "backend\.env" (
+    for /f "usebackq eol=# tokens=1,* delims==" %%a in ("backend\.env") do (
+        set "envkey=%%a"
+        set "envval=%%b"
+        if not "!envkey!"=="" (
+            if "!envkey: =!"=="!envkey!" (
+                if "!envkey!"=="TUNNEL" set "TUNNEL=!envval!"
+                if "!envkey!"=="TUNNEL_TOOL" set "TUNNEL_TOOL=!envval!"
+                if "!envkey!"=="SUBDOMAIN" set "SUBDOMAIN=!envval!"
+            )
+        )
+    )
+)
+
 :: Set defaults if not provided
 if "%MODEL_FAMILY%"=="" set MODEL_FAMILY=Llama-3.3-70B-Instruct
 if "%QUANT%"=="" set QUANT=Q4_K_M

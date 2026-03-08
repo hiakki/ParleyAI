@@ -109,3 +109,30 @@ Server starts with minimal use. First chat → text loads. First image → image
 **Enable/disable:** `enable_text`, `enable_tts`, `enable_image`, `enable_video` (1 or 0). **Concurrent image+video:** `gpu_allow_image_and_video_concurrent=1` when you have enough VRAM.
 
 Use **local paths** for downloaded models (e.g. `model_path_image=/home/user/models/stable-diffusion-v1-5`). Diffusers loads from that path; for HF ids it uses the cache.
+
+---
+
+## Tunnel (full-stack only)
+
+When you run the **full-stack** app with `./start.sh` or `.\start_windows.bat`, you can put tunnel options in `backend/.env` and they will be picked up:
+
+| Variable     | Example   | Meaning |
+|-------------|-----------|---------|
+| `TUNNEL`    | `on` / `off` | Expose the app via a public URL (default: off). |
+| `TUNNEL_TOOL` | `auto`, `cloudflared`, `localtunnel` | Which tunnel tool to use (default: auto). |
+| `SUBDOMAIN` | `parley-ai` | Custom subdomain for localtunnel (e.g. parley-ai.loca.lt). |
+
+These are **not** used when you run the backend only (`python backend/run.py`); the tunnel is started by the start scripts and forwards the frontend (Vite) port.
+
+---
+
+## Verify GPU use (text model)
+
+To confirm that `gpu_layers_text` is applied and the text model uses the GPU, run:
+
+```bash
+# From repo root (with venv active or use backend/venv/bin/python)
+python backend/check_gpu_setup.py
+```
+
+From the `backend/` folder: `python check_gpu_setup.py`. The script loads your `.env`, prints config, checks whether llama-server is a CUDA build (when applicable), runs one short inference, and if `nvidia-smi` is available reports whether GPU memory increased. It also prints next steps if the backend is CPU-only.

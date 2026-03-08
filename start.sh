@@ -71,6 +71,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 export PATH="$HOME/bin:$PATH"
 
+# Load backend/.env so TUNNEL, TUNNEL_TOOL, SUBDOMAIN (and other vars) are set when running full-stack
+if [ -f backend/.env ]; then
+    set -a
+    # shellcheck source=backend/.env
+    . backend/.env
+    set +a
+fi
+
 echo "🦙 ParleyAI — Local Chat"
 echo "=================================="
 echo ""
