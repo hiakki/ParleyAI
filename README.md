@@ -753,6 +753,8 @@ huggingface-cli download bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503
 
 Then open **http://localhost:5173** in your browser!
 
+**Backend only (single command):** From repo root run `python backend/run.py` (or from `backend/` run `python run.py`). This creates the venv, installs dependencies, and starts the server. Configure via `backend/.env` (copy from `backend/.env.example`).
+
 ### Manual Setup - macOS (Apple Silicon)
 
 If `setup_fullstack.sh` has issues, set up manually:
@@ -1009,6 +1011,7 @@ ParleyAI/
 │   └── package.json
 │
 ├── backend/              # FastAPI server
+│   ├── run.py            # Single command: venv + deps + server (python backend/run.py)
 │   ├── server.py         # REST API + SSE streaming + optional /api/story, /api/tts, /api/image, /api/video
 │   ├── llama_transformer.py  # LLM wrapper (internal module)
 │   ├── resource_manager.py   # GPU serialization (for optional image/video)

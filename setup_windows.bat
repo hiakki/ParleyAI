@@ -619,6 +619,10 @@ echo =====================================================
 echo.
 echo Run commands based on your shell:
 echo.
+echo [Backend only - single command (no separate venv activate or uvicorn)]:
+echo   python backend\run.py
+echo   (Creates venv, installs deps, starts server. Use backend\.env for config.)
+echo.
 echo [1] CMD / x64 Native Tools Command Prompt:
 echo   .\start_windows.bat
 echo.

@@ -547,31 +547,21 @@ class LlamaTransformer:
         try:
             # Initialize llama.cpp model with optimized settings for Apple Silicon
             # Note: verbose=False suppresses llama.cpp internal output (1000+ lines)
-        self.llm = Llama(
-            model_path=model_path,
-            n_ctx=n_ctx,
-            n_batch=n_batch,
-            n_gpu_layers=n_gpu_layers,
-            use_mmap=use_mmap,
-            use_mlock=use_mlock,
+            self.llm = Llama(
+                model_path=model_path,
+                n_ctx=n_ctx,
+                n_batch=n_batch,
+                n_gpu_layers=n_gpu_layers,
+                use_mmap=use_mmap,
+                use_mlock=use_mlock,
                 verbose=False,
-                
                 # === PERFORMANCE OPTIMIZATIONS ===
-                
                 # Thread settings for Apple Silicon M4
-                # M4 Pro has 10 performance + 4 efficiency cores
-                n_threads=10,          # Use performance cores for generation
-                n_threads_batch=10,    # Use performance cores for batch processing
-                
-                # Flash Attention - faster attention with less memory
+                n_threads=10,
+                n_threads_batch=10,
                 flash_attn=self.flash_attn,
-                
-                # KV Cache Quantization - significant memory savings
-                # F16 (type 1) is default, Q8_0 (type 4) saves more memory
-                type_k=1,  # GGML_TYPE_F16
-                type_v=1,  # GGML_TYPE_F16
-                
-                # Offload KV cache to GPU for faster inference
+                type_k=1,
+                type_v=1,
                 offload_kqv=self.offload_kqv,
             )
         except Exception as e:
@@ -932,8 +922,8 @@ class LlamaTransformer:
             print(f"{qname:<10} {info['size_gb']}GB{'':<6} {info['recommended_ram']:<12} {info['quality']}")
         print("-" * 70)
         if model_family == "Llama-3.3-70B-Instruct":
-        print("\n✓ Recommended for 48GB RAM: Q4_K_M (best balance)")
-        print("✓ Recommended for 16GB RAM: Q3_K_S or Q2_K")
+            print("\n✓ Recommended for 48GB RAM: Q4_K_M (best balance)")
+            print("✓ Recommended for 16GB RAM: Q3_K_S or Q2_K")
         else:
             print("\n✓ Recommended for 30–35GB RAM: Q4_K_M or Q5_K_M")
         print("  Use mmap to stream model layers from disk as needed.\n")

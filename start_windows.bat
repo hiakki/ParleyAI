@@ -13,6 +13,7 @@ echo ParleyAI - Local Chat
 echo.
 echo Usage:
 echo   .\start_windows.bat                Start with defaults
+echo   python backend\run.py              Backend only (single command: venv + deps + server)
 echo   set MODEL_FAMILY=LFM2-24B-A2B          Use LFM2 model
 echo   set TUNNEL=on                       Expose over the internet
 echo.

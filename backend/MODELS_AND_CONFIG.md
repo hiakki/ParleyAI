@@ -1,6 +1,6 @@
 # ParleyAI — Models and config (all in `backend/.env`)
 
-Copy `backend/.env.example` to `backend/.env` and set paths to your **downloaded** models. The backend loads `.env` on startup; every model and param is configurable there. **Works on Linux, Windows, and macOS** — use forward slashes or OS-native paths (e.g. `C:\Models\...` on Windows; Python accepts both). For **which models to use** (text, TTS, image, video) and **% comparison vs global models**, see **`MODEL_RECOMMENDATIONS.md`**.
+Copy `backend/.env.example` to `backend/.env` and set paths to your **downloaded** models. **Single command to run the backend:** from repo root `python backend/run.py`, or from `backend/` run `python run.py` (creates venv, installs deps, starts server). The backend loads `.env` on startup; every model and param is configurable there. **Works on Linux, Windows, and macOS** — use forward slashes or OS-native paths (e.g. `C:\Models\...` on Windows; Python accepts both). For **which models to use** (text, TTS, image, video) and **% comparison vs global models**, see **`MODEL_RECOMMENDATIONS.md`**.
 
 ---
 
