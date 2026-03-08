@@ -31,6 +31,30 @@ from pathlib import Path
 def _backend_dir() -> Path:
     return Path(__file__).resolve().parent
 
+def _venv_python(backend_dir: Path) -> Path | None:
+    """Return path to backend venv Python if it exists, else None."""
+    if sys.platform == "win32":
+        p = backend_dir / "venv" / "Scripts" / "python.exe"
+    else:
+        p = backend_dir / "venv" / "bin" / "python"
+    return p if p.exists() else None
+
+def _run_with_venv_if_needed() -> None:
+    """If not already running under backend venv, re-exec with venv Python so deps (fastapi, etc.) are available."""
+    backend_dir = _backend_dir()
+    venv_py = _venv_python(backend_dir)
+    if venv_py is None:
+        return
+    try:
+        current = Path(sys.executable).resolve()
+        venv_path = Path(venv_py).resolve()
+    except Exception:
+        return
+    if current == venv_path:
+        return
+    os.execv(str(venv_py), [str(venv_py)] + sys.argv)
+    sys.exit(0)
+
 def _load_env():
     backend_dir = _backend_dir()
     os.chdir(backend_dir)
@@ -90,6 +114,7 @@ def _check_llama_server_cuda(bin_path: str) -> tuple[bool, str]:
         return False, f"Could not run llama-server: {e}"
 
 def main() -> int:
+    _run_with_venv_if_needed()
     backend_dir = _load_env()
     print("=" * 60)
     print("ParleyAI — GPU setup check")
