@@ -286,6 +286,16 @@ def main() -> int:
     print("  - gpu_layers_text is read from .env and passed to the backend.")
     print("  - GPU is only used if the binary is GPU-capable (CUDA build of llama-server, or llama-cpp-python built with CUDA).")
     print("  - If you still see no GPU: replace llama-server with the CUDA build, or reinstall llama-cpp-python with CUDA.")
+    # Speed tip for 8GB VRAM when context is large
+    try:
+        ctx_val = int(os.getenv("ctx_text") or os.getenv("CTX", "2048"))
+        if ctx_val > 4096 and mem_after and mem_after > 6000:
+            print()
+            print("Speed tip (8GB VRAM): Large context (ctx=%s) uses a lot of VRAM for KV cache, leaving less for model layers → slower tok/s." % ctx_val)
+            print("  For 15–25+ tok/s with Grand-Story (or 20–30 with Qwen 32B), try in .env: ctx_text=2048 or 4096, gpu_layers_text=-1 (or 28–32).")
+            print("  Trade-off: shorter context; story API needs ctx_text>=4096 for long stories.")
+    except Exception:
+        pass
     print("=" * 60)
     return 0
 
