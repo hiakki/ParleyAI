@@ -24,6 +24,7 @@ if _env_file.exists():
 
 import json
 import asyncio
+import base64
 import logging
 import queue
 import sys
@@ -37,7 +38,7 @@ from typing import Optional, Union, Any
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
-from pydantic import field_validator, ConfigDict
+from pydantic import field_validator, model_validator, ConfigDict
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -558,11 +559,30 @@ class TTSRequest(BaseModel):
     language: Optional[str] = None
 
 
+class SceneImageItem(BaseModel):
+    visualDescription: str
+
+
 class ImageRequest(BaseModel):
-    prompt: str
+    """Single image: prompt. Multi-scene (NarrateAI): scenes + artStylePrompt."""
+    prompt: Optional[str] = None
+    scenes: Optional[list[SceneImageItem]] = None
+    artStylePrompt: Optional[str] = None
     negative_prompt: Optional[str] = None
+    negativePrompt: Optional[str] = None  # NarrateAI sends this
     width: int = 512
     height: int = 512
+
+    def get_negative_prompt(self) -> str:
+        return (self.negativePrompt or self.negative_prompt) or ""
+
+    @model_validator(mode="after")
+    def require_prompt_or_scenes(self):
+        if self.prompt is None and (not self.scenes or len(self.scenes) == 0):
+            raise ValueError("Either 'prompt' or non-empty 'scenes' is required")
+        if self.prompt is not None and self.scenes is not None:
+            raise ValueError("Provide either 'prompt' or 'scenes', not both")
+        return self
 
 
 class VideoRequest(BaseModel):
@@ -690,7 +710,25 @@ if _image_video_available:
             if vr.is_loaded:
                 await vr.unload()
         ir = _get_image_runner()
-        path = await ir.generate(req.prompt, negative_prompt=req.negative_prompt, width=req.width, height=req.height)
+        neg = req.get_negative_prompt()
+
+        if req.scenes:
+            # NarrateAI contract: return { images: base64 string[] }
+            images_b64: list[str] = []
+            art = (req.artStylePrompt or "").strip()
+            for i, scene in enumerate(req.scenes):
+                prompt = scene.visualDescription.strip()
+                if art:
+                    prompt = f"{prompt}. {art}"
+                logger.info("[api/image] Scene %d/%d: %s...", i + 1, len(req.scenes), prompt[:80])
+                path = await ir.generate(prompt, negative_prompt=neg, width=req.width, height=req.height)
+                with open(path, "rb") as f:
+                    images_b64.append(base64.b64encode(f.read()).decode("ascii"))
+            logger.info("[api/image] Generated %d images", len(images_b64))
+            return {"images": images_b64}
+
+        # Single prompt (legacy)
+        path = await ir.generate(req.prompt, negative_prompt=neg, width=req.width, height=req.height)
         return {"image_path": path}
 
     @app.post("/api/video")
