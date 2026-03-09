@@ -40,7 +40,9 @@ pip install -q --upgrade -r requirements-extra.txt 2>/dev/null || true
 # If NVIDIA GPU present, install PyTorch with CUDA so /api/image uses GPU
 if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
     echo "   Installing PyTorch with CUDA for GPU image generation..."
-    if pip install torch --index-url https://download.pytorch.org/whl/cu124 --force-reinstall 2>/dev/null; then
+    if pip install torch --index-url https://download.pytorch.org/whl/cu128 --force-reinstall 2>/dev/null; then
+        echo "   ✓ PyTorch with CUDA 12.8 installed"
+    elif pip install torch --index-url https://download.pytorch.org/whl/cu124 --force-reinstall 2>/dev/null; then
         echo "   ✓ PyTorch with CUDA 12.4 installed"
     elif pip install torch --index-url https://download.pytorch.org/whl/cu121 --force-reinstall 2>/dev/null; then
         echo "   ✓ PyTorch with CUDA 12.1 installed"
@@ -54,18 +56,44 @@ echo ""
 echo "========================================"
 echo "  Pre-download image + video models (optional)"
 echo "========================================"
-echo "Downloads to HF cache (~5 GB image + ~20 GB video). First /api/image and /api/video use will be instant."
+echo "Image model (text-to-image):  ~5 GB   - runwayml/stable-diffusion-v1-5"
+echo "Video model (image-to-video): ~20 GB  - stabilityai/stable-video-diffusion-img2vid-xt"
+python -c "import os; h=os.environ.get('HF_HOME', os.path.join(os.path.expanduser('~'), '.cache', 'huggingface')); c=os.environ.get('HF_HUB_CACHE', os.path.join(h, 'hub')); print('Cache directory:', c)"
+echo "To use a different folder, set HF_HOME (e.g. export HF_HOME=~/HFcache). PRELOAD_MODELS: n=skip, image=~5GB, video=~20GB, y=both."
 echo ""
-read -p "Pre-download now? [Y/n]: " PRELOAD_MODELS
-if [[ ! "$PRELOAD_MODELS" =~ ^[nN]$ ]]; then
+if [[ -n "${PRELOAD_MODELS:-}" && "$PRELOAD_MODELS" =~ ^[nN]$ ]]; then
+    echo "   [SKIP] PRELOAD_MODELS=$PRELOAD_MODELS - models will download on first use."
+elif [[ "${PRELOAD_MODELS:-}" == "image" ]]; then
+    echo "Pre-downloading image only (~5 GB)..."
     echo ""
-    echo "Downloading image model: runwayml/stable-diffusion-v1-5 ..."
+    echo "Downloading image model: runwayml/stable-diffusion-v1-5 (~5 GB)..."
+    python -c "from huggingface_hub import snapshot_download; snapshot_download('runwayml/stable-diffusion-v1-5'); print('[OK] Image model cached.')" || echo "[SKIP] Image model download failed."
+elif [[ "${PRELOAD_MODELS:-}" == "video" ]]; then
+    echo "Pre-downloading video only (~20 GB)..."
+    echo ""
+    echo "Downloading video model: stabilityai/stable-video-diffusion-img2vid-xt (~20 GB)..."
+    python -c "from huggingface_hub import snapshot_download; snapshot_download('stabilityai/stable-video-diffusion-img2vid-xt'); print('[OK] Video model cached.')" || echo "[SKIP] Video model download failed."
+elif [[ -n "${PRELOAD_MODELS:-}" ]]; then
+    echo "Pre-downloading both (~25 GB)..."
+    echo ""
+    echo "Downloading image model: runwayml/stable-diffusion-v1-5 (~5 GB)..."
     python -c "from huggingface_hub import snapshot_download; snapshot_download('runwayml/stable-diffusion-v1-5'); print('[OK] Image model cached.')" || echo "[SKIP] Image model download failed."
     echo ""
-    echo "Downloading video model: stabilityai/stable-video-diffusion-img2vid-xt ..."
+    echo "Downloading video model: stabilityai/stable-video-diffusion-img2vid-xt (~20 GB)..."
     python -c "from huggingface_hub import snapshot_download; snapshot_download('stabilityai/stable-video-diffusion-img2vid-xt'); print('[OK] Video model cached.')" || echo "[SKIP] Video model download failed."
 else
-    echo "   [SKIP] Models will download on first use."
+    read -p "Pre-download: 1=Image only (~5 GB), 2=Video only (~20 GB), 3=Both (~25 GB), 4=Skip [1-4]: " PRELOAD_CHOICE
+    case "${PRELOAD_CHOICE:-4}" in
+        1) echo ""; echo "Downloading image model: runwayml/stable-diffusion-v1-5 (~5 GB)..."
+           python -c "from huggingface_hub import snapshot_download; snapshot_download('runwayml/stable-diffusion-v1-5'); print('[OK] Image model cached.')" || echo "[SKIP] Image model download failed." ;;
+        2) echo ""; echo "Downloading video model: stabilityai/stable-video-diffusion-img2vid-xt (~20 GB)..."
+           python -c "from huggingface_hub import snapshot_download; snapshot_download('stabilityai/stable-video-diffusion-img2vid-xt'); print('[OK] Video model cached.')" || echo "[SKIP] Video model download failed." ;;
+        3) echo ""; echo "Downloading image model: runwayml/stable-diffusion-v1-5 (~5 GB)..."
+           python -c "from huggingface_hub import snapshot_download; snapshot_download('runwayml/stable-diffusion-v1-5'); print('[OK] Image model cached.')" || echo "[SKIP] Image model download failed."
+           echo ""; echo "Downloading video model: stabilityai/stable-video-diffusion-img2vid-xt (~20 GB)..."
+           python -c "from huggingface_hub import snapshot_download; snapshot_download('stabilityai/stable-video-diffusion-img2vid-xt'); print('[OK] Video model cached.')" || echo "[SKIP] Video model download failed." ;;
+        *) echo "   [SKIP] Models will download on first use." ;;
+    esac
 fi
 
 deactivate

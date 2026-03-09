@@ -437,16 +437,23 @@ nvidia-smi >nul 2>&1
 if %ERRORLEVEL%==0 (
     echo.
     echo Installing PyTorch with CUDA for GPU image generation...
-    pip install torch --index-url https://download.pytorch.org/whl/cu124 --force-reinstall
+    echo PyTorch does not publish a CUDA 13.1 wheel yet. We try newest available ^(cu128, then cu124^), which work with your 13.1 driver.
+    pip install torch --index-url https://download.pytorch.org/whl/cu128 --force-reinstall
     if %ERRORLEVEL%==0 (
-        echo [OK] PyTorch with CUDA 12.4 installed - image gen will use GPU
+        echo [OK] PyTorch with CUDA 12.8 installed - image gen will use GPU
     ) else (
-        echo Trying PyTorch CUDA 12.1...
-        pip install torch --index-url https://download.pytorch.org/whl/cu121 --force-reinstall
+        echo Trying PyTorch CUDA 12.4...
+        pip install torch --index-url https://download.pytorch.org/whl/cu124 --force-reinstall
         if %ERRORLEVEL%==0 (
-            echo [OK] PyTorch with CUDA 12.1 installed - image gen will use GPU
+            echo [OK] PyTorch with CUDA 12.4 installed - image gen will use GPU
         ) else (
-            echo [SKIP] PyTorch CUDA install failed - image gen will use CPU ^(slower^)
+            echo Trying PyTorch CUDA 12.1...
+            pip install torch --index-url https://download.pytorch.org/whl/cu121 --force-reinstall
+            if %ERRORLEVEL%==0 (
+                echo [OK] PyTorch with CUDA 12.1 installed - image gen will use GPU
+            ) else (
+                echo [SKIP] PyTorch CUDA install failed - image gen will use CPU ^(slower^)
+            )
         )
     )
 ) else (
@@ -462,7 +469,7 @@ python -c "import torch; cuda=torch.cuda.is_available(); print('  torch.cuda.is_
 if %ERRORLEVEL%==0 (
     echo [OK] Image generation will use GPU.
 ) else (
-    echo [INFO] PyTorch CUDA not available - image gen will use CPU. Re-run setup_windows.bat ^(it will force-reinstall PyTorch with CUDA^), or run: venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu124 --force-reinstall
+    echo [INFO] PyTorch CUDA not available - image gen will use CPU. Re-run setup_windows.bat ^(it will force-reinstall PyTorch with CUDA^), or run: venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu128 --force-reinstall
 )
 
 :: Pre-download image + video models so first use doesn't wait on huge downloads
@@ -471,27 +478,57 @@ echo ========================================
 echo   Pre-download image + video models (optional)
 echo ========================================
 echo.
-echo This downloads to your Hugging Face cache so first /api/image and /api/video
-echo use are instant instead of waiting 30+ min. Total size: ~5 GB (image) + ~20 GB (video).
+echo Image model (text-to-image):  ~5 GB   - runwayml/stable-diffusion-v1-5
+echo Video model (image-to-video): ~20 GB  - stabilityai/stable-video-diffusion-img2vid-xt
+echo Same as backend\.env.example: model_path_image, model_path_video. 8GB VRAM: set decode_chunk_size_video=2 in backend\.env.
 echo.
-set PRELOAD_MODELS=Y
-set /p PRELOAD_MODELS="Pre-download now? [Y/n]: "
-if /i "!PRELOAD_MODELS!"=="n" (
-    echo [SKIP] Models will download on first use.
+python -c "import os; h=os.environ.get('HF_HOME', os.path.join(os.path.expanduser('~'), '.cache', 'huggingface')); c=os.environ.get('HF_HUB_CACHE', os.path.join(h, 'hub')); print('Cache directory:', c)"
+echo To use a different folder, set HF_HOME before running (e.g. set HF_HOME=D:\HFcache)
+echo.
+:: PRELOAD_MODELS: n=skip, image=image only, video=video only, y/1=both
+if defined PRELOAD_MODELS (
+    if /i "!PRELOAD_MODELS!"=="n" (
+        echo [SKIP] PRELOAD_MODELS=n - models will download on first use.
+        goto :skip_preload
+    )
+    if /i "!PRELOAD_MODELS!"=="image" (
+        echo Pre-downloading image only (~5 GB)...
+        goto :do_preload_image
+    )
+    if /i "!PRELOAD_MODELS!"=="video" (
+        echo Pre-downloading video only (~20 GB)...
+        goto :do_preload_video
+    )
+    echo Pre-downloading both (~25 GB)...
+    goto :do_preload_image
 ) else (
-    echo.
-    echo Downloading image model: runwayml/stable-diffusion-v1-5 ...
-    python -c "from huggingface_hub import snapshot_download; snapshot_download('runwayml/stable-diffusion-v1-5'); print('[OK] Image model cached.')"
-    if !ERRORLEVEL! neq 0 (
-        echo [SKIP] Image model download failed. It will download on first /api/image use.
-    )
-    echo.
-    echo Downloading video model: stabilityai/stable-video-diffusion-img2vid-xt ...
-    python -c "from huggingface_hub import snapshot_download; snapshot_download('stabilityai/stable-video-diffusion-img2vid-xt'); print('[OK] Video model cached.')"
-    if !ERRORLEVEL! neq 0 (
-        echo [SKIP] Video model download failed. It will download on first /api/video use.
-    )
+    echo 1 = Image only (~5 GB)  2 = Video only (~20 GB)  3 = Both (~25 GB)  4 = Skip
+    choice /C 1234 /M "Choose"
+    if errorlevel 4 goto :skip_preload
+    if errorlevel 3 set "PRELOAD_CHOICE=3" & goto :do_preload_image
+    if errorlevel 2 set "PRELOAD_CHOICE=2" & goto :do_preload_video
+    set "PRELOAD_CHOICE=1" & goto :do_preload_image
 )
+:do_preload_image
+echo.
+echo Downloading image model: runwayml/stable-diffusion-v1-5 (~5 GB)...
+python -c "from huggingface_hub import snapshot_download; snapshot_download('runwayml/stable-diffusion-v1-5'); print('[OK] Image model cached.')"
+if !ERRORLEVEL! neq 0 (
+    echo [SKIP] Image model download failed. It will download on first /api/image use.
+)
+if "!PRELOAD_CHOICE!"=="1" goto :after_preload
+if /i "!PRELOAD_MODELS!"=="image" goto :after_preload
+:do_preload_video
+echo.
+echo Downloading video model: stabilityai/stable-video-diffusion-img2vid-xt (~20 GB)...
+python -c "from huggingface_hub import snapshot_download; snapshot_download('stabilityai/stable-video-diffusion-img2vid-xt'); print('[OK] Video model cached.')"
+if !ERRORLEVEL! neq 0 (
+    echo [SKIP] Video model download failed. It will download on first /api/video use.
+)
+goto :after_preload
+:skip_preload
+echo [SKIP] Models will download on first use.
+:after_preload
 
 call deactivate
 cd ..
@@ -630,7 +667,7 @@ echo.
 echo Tip: CMD uses "set VAR=value", PowerShell uses "$env:VAR='value'".
 echo.
 echo See README.md for GPU and model recommendations.
-echo If image gen still uses CPU: cd backend ^&^& venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu124 --force-reinstall
+echo If image gen still uses CPU: cd backend ^&^& venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu128 --force-reinstall
 echo.
 
 pause

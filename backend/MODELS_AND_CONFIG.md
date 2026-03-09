@@ -70,6 +70,29 @@ For **direct download links** and where to put the SVD files, see **SVD_VIDEO_MO
 
 ---
 
+## 4b. Where image/video models are downloaded (setup script & first use)
+
+When you run the setup script’s “Pre-download” step (or when `/api/image` or `/api/video` download models on first use), files go to the **Hugging Face cache**.
+
+| Platform | Default cache directory |
+|----------|-------------------------|
+| **Windows** | `C:\Users\<YourUser>\.cache\huggingface\hub` |
+| **Linux/macOS** | `~/.cache/huggingface/hub` |
+
+Inside that folder you’ll see entries like `models--runwayml--stable-diffusion-v1-5` and `models--stabilityai--stable-video-diffusion-img2vid-xt`. The setup script prints the actual path before asking “Pre-download now?”.
+
+**To use a different folder:** set **`HF_HOME`** (or **`HF_HUB_CACHE`**) *before* running the setup script or the backend:
+
+- **Windows (CMD):** `set HF_HOME=D:\HFcache`
+- **Windows (PowerShell):** `$env:HF_HOME='D:\HFcache'`
+- **Linux/macOS:** `export HF_HOME=~/HFcache`
+
+Then run `setup_windows.bat` or `./setup_fullstack.sh`. All Hugging Face downloads (image + video models) will use that directory. The backend uses the same cache when loading by model ID (e.g. `runwayml/stable-diffusion-v1-5`).
+
+**Pre-download options:** set **`PRELOAD_MODELS`** before running setup to skip the menu: **`n`** = skip both; **`image`** = image only (~5 GB); **`video`** = video only (~20 GB); **`y`** or **`1`** = both (~25 GB). If unset, the script shows: 1 = Image only, 2 = Video only, 3 = Both, 4 = Skip.
+
+---
+
 ## 5. Shared / server
 
 | Variable | Example | Meaning |

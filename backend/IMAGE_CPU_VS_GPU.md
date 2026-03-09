@@ -18,13 +18,15 @@ So GPU reduces latency by roughly **one order of magnitude** (often 8–10× or 
 
 ## What the setup does
 
-- **Windows:** Run **`setup_windows.bat`**. It installs base deps and `requirements-extra.txt`, then if **NVIDIA is detected** (`nvidia-smi`) it installs **PyTorch with CUDA** automatically (`cu124` or `cu121`). No manual pip step needed.
-- **Linux/macOS:** Run **`./setup_fullstack.sh`**. It installs `requirements-extra.txt`, then if **NVIDIA is detected** it installs PyTorch with CUDA. On Mac (no NVIDIA) image gen uses CPU unless you use Metal builds separately.
+- **Windows:** Run **`setup_windows.bat`**. It installs base deps and `requirements-extra.txt`, then if **NVIDIA is detected** (`nvidia-smi`) it installs **PyTorch with CUDA** automatically (tries **cu128**, then **cu124**, then cu121). No manual pip step needed.
+- **Linux/macOS:** Run **`./setup_fullstack.sh`**. It installs `requirements-extra.txt`, then if **NVIDIA is detected** it installs PyTorch with CUDA (cu128 → cu124 → cu121). On Mac (no NVIDIA) image gen uses CPU unless you use Metal builds separately.
+
+**Why not CUDA 13.1?** PyTorch does not publish an official **cu131** wheel yet. The newest pip wheels are typically **cu128** (CUDA 12.8). Those builds work with your **CUDA 13.1 driver** (driver is backward compatible). When PyTorch adds cu131, the script can be updated to try it first.
 
 - **Manual fix** (re-run setup or install manually)  
   If you already have the backend installed and see “Torch not compiled with CUDA” or image gen is very slow:
 
-  Re-run the setup script, or in the backend venv: `pip install torch --index-url https://download.pytorch.org/whl/cu124` (use `cu121` for CUDA 12.1). Restart the backend after installing.
+  Re-run the setup script, or in the backend venv: `pip install torch --index-url https://download.pytorch.org/whl/cu128` (or cu124 / cu121). Restart the backend after installing.
 
 - **Forcing CPU**  
   Set `CUDA_VISIBLE_DEVICES=-1` (or `cuda_visible_devices_image=-1`) so the image runner uses CPU even when a GPU is available.

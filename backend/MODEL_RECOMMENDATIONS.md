@@ -39,6 +39,16 @@ model_path_text=/path/to/L3-Grand-Story-Darkness-MOE-4X8-24.9B-e32-D_AU-Q4_k_m.g
 (See **Download paths** below for direct links and other quants.)  
 If you prefer maximum speed or long context, use **Llama-3.2-4X3B-MOE-Ultra** or **Qwen 2.5 7B** instead.
 
+**Laptop comparison (typical tok/s):** If you’re choosing among **LFM2 24B a2b Q8_0**, **Qwen2.4 32B Instruct Q5_K_M**, and **L3-Grand-Story-Darkness-MOE-4X8-24.9B Q5_K_M**:
+
+| Model | Speed (typical) | Best for |
+|-------|-----------------|-----------|
+| **LFM2 24B Q8_0** | **13–16 tok/s** | **Best for story on a laptop** — fastest; Q8_0 keeps quality high. Use when you want short wait and many drafts. |
+| **Qwen2.4 32B Q5_K_M** | 3–4 tok/s | Strong general instruct; good stories but not story-specialized. Middle option. |
+| **L3-Grand-Story Q5_K_M** | 2–3 tok/s | **Best story prose** (horror, sci‑fi, mystery, vivid narrative); slowest. Use when quality matters more than speed. |
+
+**Recommendation:** Default to **LFM2 24B Q8_0** for day-to-day story writing (speed + quality). Use **L3-Grand-Story** when you want maximum narrative quality and can wait longer (e.g. final pass or important scenes).
+
 ---
 
 ## 2. TTS — English + Hindi
