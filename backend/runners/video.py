@@ -31,6 +31,28 @@ def _resolve_device() -> str:
         pass
     return "cpu"
 
+def _attach_image_encoder_device_hook(pipe) -> None:
+    """With CPU offload, the pipeline may feed CUDA tensors to image_encoder which is on CPU. Move input to encoder device."""
+    enc = getattr(pipe, "image_encoder", None)
+    if enc is None:
+        return
+
+    def _pre_hook(module, args):
+        if not args:
+            return args
+        tup = args if isinstance(args, tuple) else (args,)
+        if not hasattr(tup[0], "to"):
+            return args
+        try:
+            dev = next(module.parameters()).device
+            out = (tup[0].to(dev),) + tup[1:]
+            return out if isinstance(args, tuple) else out[0]
+        except StopIteration:
+            return args
+
+    enc.register_forward_pre_hook(_pre_hook, with_kwargs=False)
+
+
 def _use_cpu_offload() -> bool:
     """Use model CPU offload for SVD on 8 GB GPUs. Env video_cpu_offload=1 or auto if VRAM <= 8.5 GB."""
     v = (os.environ.get("video_cpu_offload") or os.environ.get("VIDEO_CPU_OFFLOAD") or "").lower()
@@ -78,6 +100,8 @@ class VideoRunner(BaseRunner):
             if hasattr(pipe, "unet") and hasattr(pipe.unet, "enable_forward_chunking"):
                 pipe.unet.enable_forward_chunking()
             self._decode_chunk_size = min(DECODE_CHUNK_SIZE_VIDEO, 2)  # 2 is safe for 8 GB
+            # Ensure image_encoder receives inputs on its device (CPU when offloaded); avoid cuda/cpu mismatch
+            _attach_image_encoder_device_hook(pipe)
             log.info("Video model: using CPU offload + chunking (runs on 8 GB VRAM)")
         else:
             pipe = pipe.to(self._device)

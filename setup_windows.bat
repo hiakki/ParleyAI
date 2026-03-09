@@ -531,8 +531,9 @@ python -c "from huggingface_hub import snapshot_download; snapshot_download('run
 if !ERRORLEVEL! neq 0 (
     echo [SKIP] Image model download failed. It will download on first /api/image use.
 )
-if "!PRELOAD_CHOICE!"=="1" goto :after_preload
-if /i "!PRELOAD_MODELS!"=="image" goto :after_preload
+:: Only run video section if user chose 3 ^(Both^); choice 1 or env image = skip video
+if "!PRELOAD_CHOICE!"=="3" goto :do_preload_video
+goto :after_preload
 :do_preload_video
 echo.
 echo Downloading video model: stabilityai/stable-video-diffusion-img2vid-xt ^(~20 GB^)...
