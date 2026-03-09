@@ -87,19 +87,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Only one request can use the text model at a time (llama-server is single-request).
-# Streaming holds this for the whole stream; other requests get 503 if they can't acquire quickly.
-_transformer_lock = threading.Lock()
-TRANSFORMER_LOCK_TIMEOUT = 2  # seconds to wait before returning 503 "model busy"
-# Streaming: run blocking model call in thread so event loop can send chunks; wait up to this long for the lock.
-STREAMING_LOCK_TIMEOUT = 120  # seconds (model load + first token can be slow)
+# Only one request can use the text model at a time. Requests are queued and served FIFO (no 503 "model busy").
+_transformer_semaphore = asyncio.Semaphore(1)
 
 
 def _run_chat_stream_in_thread(trans, messages, max_tokens, temperature, out_queue: queue.Queue):
-    """Run transformer.chat_with_metrics in a thread; put ('token', token), ('metrics', metrics), or ('done', None) / ('error', msg)."""
-    if not _transformer_lock.acquire(blocking=True, timeout=STREAMING_LOCK_TIMEOUT):
-        out_queue.put(("error", "Model is busy with another request. Please try again later."))
-        return
+    """Run transformer.chat_with_metrics in a thread; put ('token', token), ('metrics', metrics), or ('done', None) / ('error', msg). Caller holds _transformer_semaphore for the duration."""
     try:
         for token, metrics in trans.chat_with_metrics(
             messages, max_tokens=max_tokens, temperature=temperature
@@ -111,8 +104,6 @@ def _run_chat_stream_in_thread(trans, messages, max_tokens, temperature, out_que
         out_queue.put(("done", None))
     except Exception as e:
         out_queue.put(("error", str(e)))
-    finally:
-        _transformer_lock.release()
 
 
 # Configuration from environment (.env or os.environ); prefer *_text / *_image / *_video / *_tts names
@@ -220,7 +211,7 @@ MODEL_PATH = resolve_model_path(MODEL_PATH_ENV, QUANT, MODEL_FAMILY)
 
 # Global transformer instance (loaded at startup or on first request when text_lazy_load=1)
 transformer: Optional[LlamaTransformer] = None
-_transformer_load_lock = asyncio.Lock()  # serializes loading only; inference uses _transformer_lock (threading)
+_transformer_load_lock = asyncio.Lock()  # serializes loading only; inference uses _transformer_semaphore (FIFO queue)
 
 
 async def ensure_text_loaded() -> None:
@@ -404,13 +395,10 @@ async def chat(request: ChatRequest):
             media_type="text/event-stream",
         )
     else:
-        if not _transformer_lock.acquire(blocking=True, timeout=TRANSFORMER_LOCK_TIMEOUT):
-            raise HTTPException(
-                status_code=503,
-                detail="Model is busy with another request (streaming or generation in progress). Please try again later.",
-            )
+        await _transformer_semaphore.acquire()
         try:
-            response = transformer.chat(
+            response = await asyncio.to_thread(
+                transformer.chat,
                 messages,
                 max_tokens=request.max_tokens,
                 temperature=request.temperature,
@@ -419,7 +407,7 @@ async def chat(request: ChatRequest):
             logger.info(f"Response generated: {len(response)} chars")
             return ChatResponse(response=response)
         finally:
-            _transformer_lock.release()
+            _transformer_semaphore.release()
 
 
 async def stream_chat(
@@ -427,22 +415,23 @@ async def stream_chat(
     max_tokens: int,
     temperature: float,
 ):
-    """Generator for SSE streaming with performance metrics. Runs model in thread so event loop is not blocked."""
-    out_queue = queue.Queue()
-    thread = threading.Thread(
-        target=_run_chat_stream_in_thread,
-        args=(transformer, messages, max_tokens, temperature, out_queue),
-        daemon=True,
-    )
-    thread.start()
-    token_count = 0
-    first_token_logged = False
-    stream_start = time.time()
-    last_status_log = stream_start
-    STATUS_INTERVAL = 10
-    logger.info("Starting streaming generation...")
-    logger.info("[api/chat] Calling model (if cold start: loading + prompt eval can take 1–2 min before first token)...")
+    """Generator for SSE streaming with performance metrics. Runs model in thread; requests queue FIFO."""
+    await _transformer_semaphore.acquire()
     try:
+        out_queue = queue.Queue()
+        thread = threading.Thread(
+            target=_run_chat_stream_in_thread,
+            args=(transformer, messages, max_tokens, temperature, out_queue),
+            daemon=True,
+        )
+        thread.start()
+        token_count = 0
+        first_token_logged = False
+        stream_start = time.time()
+        last_status_log = stream_start
+        STATUS_INTERVAL = 10
+        logger.info("Starting streaming generation...")
+        logger.info("[api/chat] Calling model (if cold start: loading + prompt eval can take 1–2 min before first token)...")
         while True:
             kind, value = await asyncio.to_thread(out_queue.get)
             if kind == "error":
@@ -479,6 +468,8 @@ async def stream_chat(
     except asyncio.CancelledError:
         logger.info("[api/chat] Stream cancelled (client disconnect)")
         raise
+    finally:
+        _transformer_semaphore.release()
 
 
 @app.post("/api/generate")
@@ -489,13 +480,10 @@ async def generate(prompt: str, max_tokens: int = 512, temperature: float = 0.7)
     await ensure_text_loaded()
     if transformer is None:
         raise HTTPException(status_code=503, detail="Text model not loaded")
-    if not _transformer_lock.acquire(blocking=True, timeout=TRANSFORMER_LOCK_TIMEOUT):
-        raise HTTPException(
-            status_code=503,
-            detail="Model is busy with another request (streaming or generation in progress). Please try again later.",
-        )
+    await _transformer_semaphore.acquire()
     try:
-        response = transformer.generate(
+        response = await asyncio.to_thread(
+            transformer.generate,
             prompt,
             max_tokens=max_tokens,
             temperature=temperature,
@@ -503,7 +491,7 @@ async def generate(prompt: str, max_tokens: int = 512, temperature: float = 0.7)
         )
         return {"response": response}
     finally:
-        _transformer_lock.release()
+        _transformer_semaphore.release()
 
 
 # --- Optional: story (script JSON), TTS, image, video (lazy-loaded when deps installed) ---
@@ -610,21 +598,22 @@ class VideoRequest(BaseModel):
 
 
 async def _stream_story_sse(messages: list[dict], max_tokens: int, temperature: float):
-    """SSE: stream raw text deltas so the client can avoid proxy timeouts. Runs model in thread so event loop is not blocked."""
-    out_queue = queue.Queue()
-    thread = threading.Thread(
-        target=_run_chat_stream_in_thread,
-        args=(transformer, messages, max_tokens, temperature, out_queue),
-        daemon=True,
-    )
-    thread.start()
-    token_count = 0
-    first_token_logged = False
-    stream_start = time.time()
-    last_status_log = stream_start
-    STATUS_INTERVAL = 10
-    logger.info("[api/story] Calling model (if cold start: loading + prompt eval can take 1–2 min before first token)...")
+    """SSE: stream raw text deltas. Requests queue FIFO."""
+    await _transformer_semaphore.acquire()
     try:
+        out_queue = queue.Queue()
+        thread = threading.Thread(
+            target=_run_chat_stream_in_thread,
+            args=(transformer, messages, max_tokens, temperature, out_queue),
+            daemon=True,
+        )
+        thread.start()
+        token_count = 0
+        first_token_logged = False
+        stream_start = time.time()
+        last_status_log = stream_start
+        STATUS_INTERVAL = 10
+        logger.info("[api/story] Calling model (if cold start: loading + prompt eval can take 1–2 min before first token)...")
         while True:
             kind, value = await asyncio.to_thread(out_queue.get)
             if kind == "error":
@@ -653,6 +642,8 @@ async def _stream_story_sse(messages: list[dict], max_tokens: int, temperature: 
     except asyncio.CancelledError:
         logger.info("[api/story] Stream cancelled (client disconnect)")
         raise
+    finally:
+        _transformer_semaphore.release()
 
 
 @app.post("/api/story")
@@ -678,14 +669,10 @@ async def api_story(req: StoryRequest):
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    if not _transformer_lock.acquire(blocking=True, timeout=TRANSFORMER_LOCK_TIMEOUT):
-        raise HTTPException(
-            status_code=503,
-            detail="Model is busy with another request (streaming or generation in progress). Please try again later.",
-        )
+    await _transformer_semaphore.acquire()
     try:
         logger.info("[api/story] Generating (non-streaming)...")
-        raw = transformer.chat(messages, max_tokens=req.max_tokens, temperature=0.95, stream=False)
+        raw = await asyncio.to_thread(transformer.chat, messages, max_tokens=req.max_tokens, temperature=0.95, stream=False)
         raw = raw.strip()
         if "```json" in raw:
             raw = raw.split("```json", 1)[1].split("```", 1)[0].strip()
@@ -703,7 +690,7 @@ async def api_story(req: StoryRequest):
                    title, len(scenes), len(raw))
         return {"data": {"title": title, "description": out.get("description") or "", "hashtags": out.get("hashtags") or [], "scenes": [{"text": s.get("text", ""), "visualDescription": s.get("visualDescription", "")} for s in scenes]}}
     finally:
-        _transformer_lock.release()
+        _transformer_semaphore.release()
 
 
 if _tts_available or _image_video_available:
@@ -895,13 +882,10 @@ async def openai_chat_completions(request: OpenAIChatRequest):
         )
 
     # Non-streaming
-    if not _transformer_lock.acquire(blocking=True, timeout=TRANSFORMER_LOCK_TIMEOUT):
-        raise HTTPException(
-            status_code=503,
-            detail="Model is busy with another request (streaming or generation in progress). Please try again later.",
-        )
+    await _transformer_semaphore.acquire()
     try:
-        response_text = transformer.chat(
+        response_text = await asyncio.to_thread(
+            transformer.chat,
             messages, max_tokens=request.max_tokens, temperature=request.temperature, stream=False,
         )
         logger.info(f"[v1] Response: {len(response_text)} chars")
@@ -918,28 +902,29 @@ async def openai_chat_completions(request: OpenAIChatRequest):
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
         }
     finally:
-        _transformer_lock.release()
+        _transformer_semaphore.release()
 
 
 async def openai_stream_chat(
     messages: list[dict], max_tokens: int, temperature: float,
     model_name: str, ts: int,
 ):
-    """SSE generator in OpenAI streaming format. Runs model in thread so event loop is not blocked."""
-    out_queue = queue.Queue()
-    thread = threading.Thread(
-        target=_run_chat_stream_in_thread,
-        args=(transformer, messages, max_tokens, temperature, out_queue),
-        daemon=True,
-    )
-    thread.start()
-    first_token_logged = False
-    stream_start = time.time()
-    last_status_log = stream_start
-    STATUS_INTERVAL = 10
-    token_count = 0
-    logger.info("[v1] Calling model (if cold start: loading + prompt eval can take 1–2 min before first token)...")
+    """SSE generator in OpenAI streaming format. Requests queue FIFO."""
+    await _transformer_semaphore.acquire()
     try:
+        out_queue = queue.Queue()
+        thread = threading.Thread(
+            target=_run_chat_stream_in_thread,
+            args=(transformer, messages, max_tokens, temperature, out_queue),
+            daemon=True,
+        )
+        thread.start()
+        first_token_logged = False
+        stream_start = time.time()
+        last_status_log = stream_start
+        STATUS_INTERVAL = 10
+        token_count = 0
+        logger.info("[v1] Calling model (if cold start: loading + prompt eval can take 1–2 min before first token)...")
         while True:
             kind, value = await asyncio.to_thread(out_queue.get)
             if kind == "error":
@@ -983,6 +968,8 @@ async def openai_stream_chat(
     except asyncio.CancelledError:
         logger.info("[v1] Stream cancelled (client disconnect)")
         raise
+    finally:
+        _transformer_semaphore.release()
 
 
 # ---------------------------------------------------------------------------
@@ -1056,13 +1043,10 @@ async def anthropic_messages(request: AnthropicMessagesRequest):
             media_type="text/event-stream",
         )
 
-    if not _transformer_lock.acquire(blocking=True, timeout=TRANSFORMER_LOCK_TIMEOUT):
-        raise HTTPException(
-            status_code=503,
-            detail="Model is busy with another request (streaming or generation in progress). Please try again later.",
-        )
+    await _transformer_semaphore.acquire()
     try:
-        response_text = transformer.chat(
+        response_text = await asyncio.to_thread(
+            transformer.chat,
             messages, max_tokens=request.max_tokens, temperature=request.temperature, stream=False,
         )
         logger.info(f"[messages] Response: {len(response_text)} chars")
@@ -1077,14 +1061,14 @@ async def anthropic_messages(request: AnthropicMessagesRequest):
             "usage": {"input_tokens": 0, "output_tokens": 0},
         }
     finally:
-        _transformer_lock.release()
+        _transformer_semaphore.release()
 
 
 async def anthropic_stream_chat(
     messages: list[dict], max_tokens: int, temperature: float,
     model_name: str, msg_id: str,
 ):
-    """SSE generator in Anthropic streaming format. Runs model in thread so event loop is not blocked."""
+    """SSE generator in Anthropic streaming format. Requests queue FIFO."""
     def sse(event: str, data: dict) -> str:
         return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
@@ -1103,20 +1087,21 @@ async def anthropic_stream_chat(
     })
     yield sse("ping", {"type": "ping"})
 
-    out_queue = queue.Queue()
-    thread = threading.Thread(
-        target=_run_chat_stream_in_thread,
-        args=(transformer, messages, max_tokens, temperature, out_queue),
-        daemon=True,
-    )
-    thread.start()
-    output_tokens = 0
-    first_token_logged = False
-    stream_start = time.time()
-    last_status_log = stream_start
-    STATUS_INTERVAL = 10
-    logger.info("[messages] Calling model (if cold start: loading + prompt eval can take 1–2 min before first token)...")
+    await _transformer_semaphore.acquire()
     try:
+        out_queue = queue.Queue()
+        thread = threading.Thread(
+            target=_run_chat_stream_in_thread,
+            args=(transformer, messages, max_tokens, temperature, out_queue),
+            daemon=True,
+        )
+        thread.start()
+        output_tokens = 0
+        first_token_logged = False
+        stream_start = time.time()
+        last_status_log = stream_start
+        STATUS_INTERVAL = 10
+        logger.info("[messages] Calling model (if cold start: loading + prompt eval can take 1–2 min before first token)...")
         while True:
             kind, value = await asyncio.to_thread(out_queue.get)
             if kind == "error":
@@ -1157,6 +1142,8 @@ async def anthropic_stream_chat(
     except asyncio.CancelledError:
         logger.info("[messages] Stream cancelled (client disconnect)")
         raise
+    finally:
+        _transformer_semaphore.release()
 
 
 if __name__ == "__main__":
