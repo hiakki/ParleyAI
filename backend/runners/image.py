@@ -1,5 +1,5 @@
 """
-Image: text-to-image via diffusers (GPU). Lazy load; serialized with video.
+Image: text-to-image via diffusers (GPU or CPU). Lazy load; serialized with video.
 """
 
 from __future__ import annotations
@@ -11,7 +11,18 @@ from typing import Optional
 from runners.base import BaseRunner
 from resource_manager import ResourceManager, GPUSlot
 
-DEVICE = "cpu" if (os.environ.get("cuda_visible_devices_image") or os.environ.get("CUDA_VISIBLE_DEVICES")) == "-1" else "cuda"
+def _resolve_device() -> str:
+    """Use CUDA only if env doesn't force CPU and torch has CUDA built in and available."""
+    if (os.environ.get("cuda_visible_devices_image") or os.environ.get("CUDA_VISIBLE_DEVICES")) == "-1":
+        return "cpu"
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+    except Exception:
+        pass
+    return "cpu"
+
 IMAGE_MODEL_ID = os.path.expanduser((os.environ.get("model_path_image") or os.environ.get("IMAGE_MODEL_ID") or "runwayml/stable-diffusion-v1-5").strip())
 WIDTH_IMAGE = int(os.environ.get("width_image") or os.environ.get("WIDTH_IMAGE") or "512")
 HEIGHT_IMAGE = int(os.environ.get("height_image") or os.environ.get("HEIGHT_IMAGE") or "512")
@@ -22,17 +33,23 @@ class ImageRunner(BaseRunner):
     def __init__(self, resource_manager: Optional[ResourceManager] = None):
         super().__init__(resource_manager=resource_manager, gpu_slot=GPUSlot.IMAGE)
         self._pipe = None
+        self._device: Optional[str] = None
 
     async def _load(self) -> None:
         import torch
+        import logging
+        log = logging.getLogger(__name__)
+        self._device = _resolve_device()
+        if self._device == "cpu":
+            log.info("Image model: using CPU (PyTorch CUDA not available or disabled)")
         from diffusers import StableDiffusionPipeline
         pipe = StableDiffusionPipeline.from_pretrained(
             IMAGE_MODEL_ID,
-            torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
+            torch_dtype=torch.float16 if self._device == "cuda" else torch.float32,
             safety_checker=None,
         )
-        pipe = pipe.to(DEVICE)
-        if DEVICE == "cuda":
+        pipe = pipe.to(self._device)
+        if self._device == "cuda":
             pipe.enable_attention_slicing()
         self._pipe = pipe
 
@@ -41,7 +58,7 @@ class ImageRunner(BaseRunner):
             import torch
             del self._pipe
             self._pipe = None
-            if DEVICE == "cuda":
+            if self._device == "cuda":
                 torch.cuda.empty_cache()
 
     async def generate(

@@ -44,6 +44,8 @@ Copy `backend/.env.example` to `backend/.env` and set paths to your **downloaded
 | `steps_image` | `25` | Inference steps. |
 | `cuda_visible_devices_image` | (empty) or `-1` | Set to `-1` to force CPU for image. |
 
+For **CPU vs GPU speed comparison** and how to install PyTorch with CUDA so image gen uses the GPU, see **IMAGE_CPU_VS_GPU.md**.
+
 **Legacy:** `IMAGE_MODEL_ID`, `CUDA_VISIBLE_DEVICES`.
 
 ---

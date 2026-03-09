@@ -432,6 +432,27 @@ if %ERRORLEVEL% neq 0 (
     echo [OK] Optional deps installed ^(edge-tts, torch, diffusers, etc.^)
 )
 
+:: If NVIDIA GPU is present, install PyTorch with CUDA so /api/image uses GPU (much faster)
+nvidia-smi >nul 2>&1
+if %ERRORLEVEL%==0 (
+    echo.
+    echo Installing PyTorch with CUDA for GPU image generation...
+    pip install torch --index-url https://download.pytorch.org/whl/cu124
+    if %ERRORLEVEL%==0 (
+        echo [OK] PyTorch with CUDA 12.4 installed - image gen will use GPU
+    ) else (
+        echo Trying PyTorch CUDA 12.1...
+        pip install torch --index-url https://download.pytorch.org/whl/cu121
+        if %ERRORLEVEL%==0 (
+            echo [OK] PyTorch with CUDA 12.1 installed - image gen will use GPU
+        ) else (
+            echo [SKIP] PyTorch CUDA install failed - image gen will use CPU ^(slower^)
+        )
+    )
+) else (
+    echo [INFO] No NVIDIA GPU detected - image gen will use CPU if used
+)
+
 call deactivate
 cd ..
 echo [OK] Backend ready
