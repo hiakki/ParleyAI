@@ -62,7 +62,7 @@ For **CPU vs GPU speed comparison** and how to install PyTorch with CUDA so imag
 | `noise_aug_strength_video` | `0.02` | Noise augmentation. |
 | `cuda_visible_devices_video` | (empty) or `-1` | Set to `-1` to force CPU for video. |
 
-On **8 GB VRAM**, the video runner auto-enables CPU offload and uses `decode_chunk_size` ≤ 2 so SVD runs without OOM. Optional: `video_cpu_offload=1` to force offload.
+On **8 GB VRAM**, the video runner auto-enables CPU offload and uses `decode_chunk_size` ≤ 2 so SVD runs without OOM. Optional: `video_cpu_offload=1` to force offload. For **faster** clips on 8 GB, set `num_frames_video=14` (shorter video, less time per run).
 
 For **direct download links** and where to put the SVD files, see **SVD_VIDEO_MODEL_DOWNLOAD.md**.
 
