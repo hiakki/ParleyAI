@@ -44,9 +44,8 @@ def _patch_pipeline_encode_image_for_offload(pipe) -> None:
             encoder_device = next(enc.parameters()).device
         except StopIteration:
             encoder_device = device
-        # Call original with encoder device so image.to(device=...) matches where the encoder lives
+        # Call original with encoder device so image.to(device=...) matches where the encoder lives (bound method: no self)
         return _original_encode_image(
-            pipe,
             image,
             encoder_device,
             num_videos_per_prompt,
