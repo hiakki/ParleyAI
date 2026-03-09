@@ -14,6 +14,7 @@ This script:
   3. If llama-server: checks whether the binary is likely CUDA (Windows).
   4. Runs a minimal inference and, if nvidia-smi is available, reports whether GPU memory increased.
   5. Prints clear next steps if GPU is not used.
+  6. Checks image generation (Stable Diffusion): PyTorch, CUDA availability, and whether /api/image would use GPU.
 
 For accurate GPU check, run with the backend stopped (so this script loads the model and we can measure).
 If the backend is already running, the script will send one request to it and then check nvidia-smi.
@@ -296,6 +297,52 @@ def main() -> int:
             print("  Trade-off: shorter context; story API needs ctx_text>=4096 for long stories.")
     except Exception:
         pass
+
+    # -------------------------------------------------------------------------
+    # Image generation (Stable Diffusion) GPU check
+    # -------------------------------------------------------------------------
+    print()
+    print("-" * 60)
+    print("Image generation (Stable Diffusion) GPU check")
+    print("-" * 60)
+    image_gpu_ok = False
+    try:
+        import torch
+        cuda_available = torch.cuda.is_available()
+        print(f"  PyTorch version:    {torch.__version__}")
+        print(f"  CUDA available:    {cuda_available}")
+        if cuda_available:
+            try:
+                name = torch.cuda.get_device_name(0)
+                total_mb = torch.cuda.get_device_properties(0).total_memory // (1024 * 1024)
+                print(f"  GPU device:        {name} ({total_mb} MiB)")
+            except Exception:
+                pass
+            # Would the image runner use GPU?
+            try:
+                from runners.image import _resolve_device
+                device = _resolve_device()
+                if device == "cuda":
+                    print(f"  Image backend:     would use GPU (cuda)")
+                    image_gpu_ok = True
+                else:
+                    print(f"  Image backend:     would use CPU (CUDA disabled or PyTorch not built with CUDA)")
+                    print()
+                    print("  >>> For GPU image generation install PyTorch with CUDA, then restart backend:")
+                    print("      pip install torch --index-url https://download.pytorch.org/whl/cu124")
+            except ImportError:
+                print("  Image backend:     (runners.image not loaded — install requirements-extra.txt)")
+        else:
+            print("  Image backend:     would use CPU (PyTorch not built with CUDA)")
+            print()
+            print("  >>> For GPU image generation install PyTorch with CUDA, then restart backend:")
+            print("      pip install torch --index-url https://download.pytorch.org/whl/cu124")
+    except ImportError:
+        print("  PyTorch:           not installed (install requirements-extra.txt for /api/image)")
+        print("  Image backend:     not available")
+    print("-" * 60)
+    if image_gpu_ok:
+        print("Image GPU: OK — /api/image will use the GPU.")
     print("=" * 60)
     return 0
 

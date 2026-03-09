@@ -41,7 +41,10 @@ class ImageRunner(BaseRunner):
         log = logging.getLogger(__name__)
         self._device = _resolve_device()
         if self._device == "cpu":
-            log.info("Image model: using CPU (PyTorch CUDA not available or disabled)")
+            log.info(
+                "Image model: using CPU (PyTorch CUDA not available or disabled). "
+                "For GPU: pip install torch --index-url https://download.pytorch.org/whl/cu124 then restart backend."
+            )
         from diffusers import StableDiffusionPipeline
         pipe = StableDiffusionPipeline.from_pretrained(
             IMAGE_MODEL_ID,
@@ -83,10 +86,12 @@ class ImageRunner(BaseRunner):
                 height=h,
             )
             img = out.images[0]
-            if not output_path:
-                fd, output_path = tempfile.mkstemp(suffix=".png")
+            if output_path:
+                save_path = output_path
+            else:
+                fd, save_path = tempfile.mkstemp(suffix=".png")
                 os.close(fd)
-            img.save(output_path)
-            return output_path
+            img.save(save_path)
+            return save_path
 
         return await asyncio.to_thread(_run)
