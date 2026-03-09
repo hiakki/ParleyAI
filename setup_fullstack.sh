@@ -49,6 +49,25 @@ if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
     fi
 fi
 
+# Pre-download image + video models so first use doesn't wait on huge downloads
+echo ""
+echo "========================================"
+echo "  Pre-download image + video models (optional)"
+echo "========================================"
+echo "Downloads to HF cache (~5 GB image + ~20 GB video). First /api/image and /api/video use will be instant."
+echo ""
+read -p "Pre-download now? [Y/n]: " PRELOAD_MODELS
+if [[ ! "$PRELOAD_MODELS" =~ ^[nN]$ ]]; then
+    echo ""
+    echo "Downloading image model: runwayml/stable-diffusion-v1-5 ..."
+    python -c "from huggingface_hub import snapshot_download; snapshot_download('runwayml/stable-diffusion-v1-5'); print('[OK] Image model cached.')" || echo "[SKIP] Image model download failed."
+    echo ""
+    echo "Downloading video model: stabilityai/stable-video-diffusion-img2vid-xt ..."
+    python -c "from huggingface_hub import snapshot_download; snapshot_download('stabilityai/stable-video-diffusion-img2vid-xt'); print('[OK] Video model cached.')" || echo "[SKIP] Video model download failed."
+else
+    echo "   [SKIP] Models will download on first use."
+fi
+
 deactivate
 cd ..
 echo "   ✓ Backend ready"

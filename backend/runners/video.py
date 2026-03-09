@@ -1,5 +1,5 @@
 """
-Video: image-to-video via SVD (GPU). Lazy load; serialized with image.
+Video: image-to-video via SVD (GPU or CPU offload). Lazy load; serialized with image.
 """
 
 from __future__ import annotations
@@ -20,7 +20,32 @@ def _float_ev(k: str, leg: str, d: float) -> float:
     v = os.environ.get(k) or os.environ.get(leg)
     return float(v) if v else d
 
-DEVICE = "cpu" if (os.environ.get("cuda_visible_devices_video") or os.environ.get("CUDA_VISIBLE_DEVICES")) == "-1" else "cuda"
+def _resolve_device() -> str:
+    if (os.environ.get("cuda_visible_devices_video") or os.environ.get("CUDA_VISIBLE_DEVICES")) == "-1":
+        return "cpu"
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+    except Exception:
+        pass
+    return "cpu"
+
+def _use_cpu_offload() -> bool:
+    """Use model CPU offload for SVD on 8 GB GPUs. Env video_cpu_offload=1 or auto if VRAM <= 8.5 GB."""
+    v = (os.environ.get("video_cpu_offload") or os.environ.get("VIDEO_CPU_OFFLOAD") or "").lower()
+    if v in ("1", "true", "yes"):
+        return True
+    try:
+        import torch
+        if torch.cuda.is_available():
+            total_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+            if total_gb <= 8.5:
+                return True
+    except Exception:
+        pass
+    return False
+
 VIDEO_MODEL_ID = os.path.expanduser((os.environ.get("model_path_video") or os.environ.get("VIDEO_MODEL_ID") or "stabilityai/stable-video-diffusion-img2vid-xt").strip())
 NUM_FRAMES_VIDEO = _int_ev("num_frames_video", "NUM_FRAMES_VIDEO", 25)
 FPS_VIDEO = _int_ev("fps_video", "FPS_VIDEO", 6)
@@ -33,17 +58,31 @@ class VideoRunner(BaseRunner):
     def __init__(self, resource_manager: Optional[ResourceManager] = None):
         super().__init__(resource_manager=resource_manager, gpu_slot=GPUSlot.VIDEO)
         self._pipe = None
+        self._device: Optional[str] = None
+        self._use_offload: bool = False
+        self._decode_chunk_size: int = DECODE_CHUNK_SIZE_VIDEO  # can be overridden in _load when offload
 
     async def _load(self) -> None:
         import torch
+        import logging
+        log = logging.getLogger(__name__)
+        self._device = _resolve_device()
+        self._use_offload = _use_cpu_offload()
         from diffusers import StableVideoDiffusionPipeline
         pipe = StableVideoDiffusionPipeline.from_pretrained(
             VIDEO_MODEL_ID,
-            torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
+            torch_dtype=torch.float16 if (self._device == "cuda" or self._use_offload) else torch.float32,
         )
-        pipe = pipe.to(DEVICE)
-        if DEVICE == "cuda":
-            pipe.enable_attention_slicing()
+        if self._use_offload and (self._device == "cuda" or torch.cuda.is_available()):
+            pipe.enable_model_cpu_offload()
+            if hasattr(pipe, "unet") and hasattr(pipe.unet, "enable_forward_chunking"):
+                pipe.unet.enable_forward_chunking()
+            self._decode_chunk_size = min(DECODE_CHUNK_SIZE_VIDEO, 2)  # 2 is safe for 8 GB
+            log.info("Video model: using CPU offload + chunking (runs on 8 GB VRAM)")
+        else:
+            pipe = pipe.to(self._device)
+            if self._device == "cuda":
+                pipe.enable_attention_slicing()
         self._pipe = pipe
 
     async def _unload(self) -> None:
@@ -51,8 +90,9 @@ class VideoRunner(BaseRunner):
             import torch
             del self._pipe
             self._pipe = None
-            if DEVICE == "cuda":
-                torch.cuda.empty_cache()
+            if self._device == "cuda" or self._use_offload:
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
     async def generate(
         self,
@@ -73,7 +113,7 @@ class VideoRunner(BaseRunner):
             out = self._pipe(
                 image,
                 num_frames=nf,
-                decode_chunk_size=DECODE_CHUNK_SIZE_VIDEO,
+                decode_chunk_size=self._decode_chunk_size,
                 motion_bucket_id=MOTION_BUCKET_ID_VIDEO,
                 noise_aug_strength=NOISE_AUG_STRENGTH_VIDEO,
             )

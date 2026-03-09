@@ -465,6 +465,34 @@ if %ERRORLEVEL%==0 (
     echo [INFO] PyTorch CUDA not available - image gen will use CPU. Re-run setup_windows.bat ^(it will force-reinstall PyTorch with CUDA^), or run: venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu124 --force-reinstall
 )
 
+:: Pre-download image + video models so first use doesn't wait on huge downloads
+echo.
+echo ========================================
+echo   Pre-download image + video models (optional)
+echo ========================================
+echo.
+echo This downloads to your Hugging Face cache so first /api/image and /api/video
+echo use are instant instead of waiting 30+ min. Total size: ~5 GB (image) + ~20 GB (video).
+echo.
+set PRELOAD_MODELS=Y
+set /p PRELOAD_MODELS="Pre-download now? [Y/n]: "
+if /i "!PRELOAD_MODELS!"=="n" (
+    echo [SKIP] Models will download on first use.
+) else (
+    echo.
+    echo Downloading image model: runwayml/stable-diffusion-v1-5 ...
+    python -c "from huggingface_hub import snapshot_download; snapshot_download('runwayml/stable-diffusion-v1-5'); print('[OK] Image model cached.')"
+    if !ERRORLEVEL! neq 0 (
+        echo [SKIP] Image model download failed. It will download on first /api/image use.
+    )
+    echo.
+    echo Downloading video model: stabilityai/stable-video-diffusion-img2vid-xt ...
+    python -c "from huggingface_hub import snapshot_download; snapshot_download('stabilityai/stable-video-diffusion-img2vid-xt'); print('[OK] Video model cached.')"
+    if !ERRORLEVEL! neq 0 (
+        echo [SKIP] Video model download failed. It will download on first /api/video use.
+    )
+)
+
 call deactivate
 cd ..
 echo [OK] Backend ready
