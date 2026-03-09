@@ -32,6 +32,7 @@ import threading
 import time
 import uuid
 import glob
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union, Any
@@ -586,10 +587,26 @@ class ImageRequest(BaseModel):
 
 
 class VideoRequest(BaseModel):
-    image_path: str
+    """NarrateAI sends imageBase64 + durationSec; local callers can send image_path. Restart server after editing."""
+    model_config = ConfigDict(extra="ignore")
+    image_path: Optional[str] = None
+    image_base64: Optional[str] = None
+    imageBase64: Optional[str] = None  # camelCase for NarrateAI
     prompt: Optional[str] = None
     num_frames: int = 25
     fps: int = 6
+    duration_sec: Optional[int] = None
+    durationSec: Optional[int] = None  # camelCase for NarrateAI
+
+    @model_validator(mode="after")
+    def require_image(self):
+        path_ok = self.image_path and Path(self.image_path).exists()
+        b64 = self.image_base64 or self.imageBase64
+        if not path_ok and not b64:
+            raise ValueError("Either image_path (existing file) or image_base64/imageBase64 is required")
+        if path_ok and b64:
+            raise ValueError("Provide either image_path or image_base64/imageBase64, not both")
+        return self
 
 
 async def _stream_story_sse(messages: list[dict], max_tokens: int, temperature: float):
@@ -739,14 +756,50 @@ if _image_video_available:
     async def api_video(req: VideoRequest):
         if not ENABLE_VIDEO:
             raise HTTPException(status_code=503, detail="Video model disabled (enable_video=0)")
-        if not Path(req.image_path).exists():
-            raise HTTPException(status_code=400, detail="image_path not found")
+        image_path: str
+        return_base64 = False
+        if req.image_path and Path(req.image_path).exists():
+            image_path = req.image_path
+        else:
+            b64 = req.image_base64 or req.imageBase64
+            if not b64:
+                raise HTTPException(status_code=422, detail="Either image_path or image_base64/imageBase64 is required")
+            try:
+                raw = base64.b64decode(b64, validate=True)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Invalid image_base64: {e}") from e
+            fd, image_path = tempfile.mkstemp(suffix=".png")
+            try:
+                os.write(fd, raw)
+                os.close(fd)
+            except Exception:
+                os.close(fd)
+                raise
+            return_base64 = True
+
+        num_frames = req.num_frames
+        fps = req.fps
+        duration_sec = req.duration_sec or req.durationSec
+        if duration_sec is not None and duration_sec > 0:
+            num_frames = min(round(duration_sec * fps), 49)
+            num_frames = max(num_frames, 14)
+
         if not GPU_ALLOW_IMAGE_VIDEO_CONCURRENT:
             ir = _get_image_runner()
             if ir.is_loaded:
                 await ir.unload()
         vr = _get_video_runner()
-        path = await vr.generate(req.image_path, prompt=req.prompt, num_frames=req.num_frames, fps=req.fps)
+        path = await vr.generate(image_path, prompt=req.prompt, num_frames=num_frames, fps=fps)
+
+        if return_base64:
+            try:
+                os.unlink(image_path)
+            except OSError:
+                pass
+            with open(path, "rb") as f:
+                video_b64 = base64.b64encode(f.read()).decode("ascii")
+            return {"video_path": path, "videoBase64": video_b64}
+
         return {"video_path": path}
 
 
