@@ -438,6 +438,7 @@ python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>nul
 if %ERRORLEVEL%==0 (
     echo.
     echo [OK] PyTorch CUDA already available - skipping install.
+    echo      For 13.x driver use cu130. Your current build works with it.
     goto :after_pytorch_install
 )
 nvidia-smi >nul 2>&1
@@ -448,23 +449,29 @@ if %ERRORLEVEL% neq 0 (
 )
 echo.
 echo Installing PyTorch with CUDA for GPU image generation...
-echo PyTorch does not publish CUDA 13.1 wheel. We use cu128/cu124 which work with 13.1 driver.
+echo Trying cu130 ^(CUDA 13.0^), then cu128, cu124, cu121. Use cu130 if you have 13.x driver.
 pip uninstall torch -y >nul 2>&1
-pip install torch --index-url https://download.pytorch.org/whl/cu128 --force-reinstall
+pip install torch --index-url https://download.pytorch.org/whl/cu130 --force-reinstall
 if %ERRORLEVEL%==0 (
-    echo [OK] PyTorch with CUDA 12.8 installed - image gen will use GPU
+    echo [OK] PyTorch with CUDA 13.0 installed - image gen will use GPU
 ) else (
-    echo Trying PyTorch CUDA 12.4...
-    pip install torch --index-url https://download.pytorch.org/whl/cu124 --force-reinstall
+    echo Trying PyTorch CUDA 12.8...
+    pip install torch --index-url https://download.pytorch.org/whl/cu128 --force-reinstall
     if %ERRORLEVEL%==0 (
-        echo [OK] PyTorch with CUDA 12.4 installed - image gen will use GPU
+        echo [OK] PyTorch with CUDA 12.8 installed - image gen will use GPU
     ) else (
-        echo Trying PyTorch CUDA 12.1...
-        pip install torch --index-url https://download.pytorch.org/whl/cu121 --force-reinstall
+        echo Trying PyTorch CUDA 12.4...
+        pip install torch --index-url https://download.pytorch.org/whl/cu124 --force-reinstall
         if %ERRORLEVEL%==0 (
-            echo [OK] PyTorch with CUDA 12.1 installed - image gen will use GPU
+            echo [OK] PyTorch with CUDA 12.4 installed - image gen will use GPU
         ) else (
-            echo [SKIP] PyTorch CUDA install failed - image gen will use CPU
+            echo Trying PyTorch CUDA 12.1...
+            pip install torch --index-url https://download.pytorch.org/whl/cu121 --force-reinstall
+            if %ERRORLEVEL%==0 (
+                echo [OK] PyTorch with CUDA 12.1 installed - image gen will use GPU
+            ) else (
+                echo [SKIP] PyTorch CUDA install failed - image gen will use CPU
+            )
         )
     )
 )
@@ -477,7 +484,7 @@ python -c "import torch; cuda=torch.cuda.is_available(); print('  torch.cuda.is_
 if %ERRORLEVEL%==0 (
     echo [OK] Image generation will use GPU.
 ) else (
-    echo [INFO] PyTorch CUDA not available - image gen will use CPU. Re-run setup_windows.bat ^(it will force-reinstall PyTorch with CUDA^), or run: venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu128 --force-reinstall
+    echo [INFO] PyTorch CUDA not available - image gen will use CPU. Re-run setup or: venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu130 --force-reinstall
 )
 
 :: Pre-download image + video models so first use doesn't wait on huge downloads
@@ -675,7 +682,7 @@ echo.
 echo Tip: CMD uses "set VAR=value", PowerShell uses "$env:VAR='value'".
 echo.
 echo See README.md for GPU and model recommendations.
-echo If image gen still uses CPU: cd backend ^&^& venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu128 --force-reinstall
+echo If image gen still uses CPU: cd backend ^&^& venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu130 --force-reinstall
 echo.
 
 pause

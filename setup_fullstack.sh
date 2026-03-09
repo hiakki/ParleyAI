@@ -40,7 +40,9 @@ pip install -q --upgrade -r requirements-extra.txt 2>/dev/null || true
 # If NVIDIA GPU present, install PyTorch with CUDA so /api/image uses GPU
 if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
     echo "   Installing PyTorch with CUDA for GPU image generation..."
-    if pip install torch --index-url https://download.pytorch.org/whl/cu128 --force-reinstall 2>/dev/null; then
+    if pip install torch --index-url https://download.pytorch.org/whl/cu130 --force-reinstall 2>/dev/null; then
+        echo "   ✓ PyTorch with CUDA 13.0 installed"
+    elif pip install torch --index-url https://download.pytorch.org/whl/cu128 --force-reinstall 2>/dev/null; then
         echo "   ✓ PyTorch with CUDA 12.8 installed"
     elif pip install torch --index-url https://download.pytorch.org/whl/cu124 --force-reinstall 2>/dev/null; then
         echo "   ✓ PyTorch with CUDA 12.4 installed"
