@@ -437,12 +437,12 @@ nvidia-smi >nul 2>&1
 if %ERRORLEVEL%==0 (
     echo.
     echo Installing PyTorch with CUDA for GPU image generation...
-    pip install torch --index-url https://download.pytorch.org/whl/cu124
+    pip install torch --index-url https://download.pytorch.org/whl/cu124 --force-reinstall
     if %ERRORLEVEL%==0 (
         echo [OK] PyTorch with CUDA 12.4 installed - image gen will use GPU
     ) else (
         echo Trying PyTorch CUDA 12.1...
-        pip install torch --index-url https://download.pytorch.org/whl/cu121
+        pip install torch --index-url https://download.pytorch.org/whl/cu121 --force-reinstall
         if %ERRORLEVEL%==0 (
             echo [OK] PyTorch with CUDA 12.1 installed - image gen will use GPU
         ) else (
@@ -451,8 +451,8 @@ if %ERRORLEVEL%==0 (
     )
 ) else (
     echo [INFO] nvidia-smi not in PATH or no NVIDIA GPU - skipping PyTorch CUDA install
-    echo        If you have an NVIDIA GPU, run this from a terminal where nvidia-smi works,
-    echo        or after setup run: venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu124
+    echo        If you have an NVIDIA GPU, run this from a terminal where nvidia-smi works.
+    echo        The script will then force-reinstall PyTorch with CUDA automatically.
 )
 
 :: Verify whether PyTorch sees CUDA (so user knows why image gen uses CPU or GPU)
@@ -462,7 +462,7 @@ python -c "import torch; cuda=torch.cuda.is_available(); print('  torch.cuda.is_
 if %ERRORLEVEL%==0 (
     echo [OK] Image generation will use GPU.
 ) else (
-    echo [INFO] PyTorch CUDA not available - image gen will use CPU. To fix: re-run this script from "x64 Native Tools" or a terminal where nvidia-smi works, or run: venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu124
+    echo [INFO] PyTorch CUDA not available - image gen will use CPU. Re-run setup_windows.bat ^(it will force-reinstall PyTorch with CUDA^), or run: venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu124 --force-reinstall
 )
 
 call deactivate
@@ -602,7 +602,7 @@ echo.
 echo Tip: CMD uses "set VAR=value", PowerShell uses "$env:VAR='value'".
 echo.
 echo See README.md for GPU and model recommendations.
-echo If image gen still uses CPU: cd backend ^&^& venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu124
+echo If image gen still uses CPU: cd backend ^&^& venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu124 --force-reinstall
 echo.
 
 pause
