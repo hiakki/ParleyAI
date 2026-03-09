@@ -31,30 +31,6 @@ def _resolve_device() -> str:
         pass
     return "cpu"
 
-def _patch_pipeline_encode_image_for_offload(pipe) -> None:
-    """With CPU offload, the pipeline uses _execution_device (cuda) for image.to(), but image_encoder may be on CPU. Patch _encode_image to use the encoder's device so input and weights match."""
-    enc = getattr(pipe, "image_encoder", None)
-    if enc is None:
-        return
-    _original_encode_image = pipe._encode_image
-
-    def _encode_image_offload_safe(image, device, num_videos_per_prompt=1, do_classifier_free_guidance=False):
-        # Use the image_encoder's current device so we never have input on cuda and weights on cpu
-        try:
-            encoder_device = next(enc.parameters()).device
-        except StopIteration:
-            encoder_device = device
-        # Call original with encoder device so image.to(device=...) matches where the encoder lives (bound method: no self)
-        return _original_encode_image(
-            image,
-            encoder_device,
-            num_videos_per_prompt,
-            do_classifier_free_guidance,
-        )
-
-    pipe._encode_image = _encode_image_offload_safe
-
-
 def _use_cpu_offload() -> bool:
     """Use model CPU offload for SVD on 8 GB GPUs. Env video_cpu_offload=1 or auto if VRAM <= 8.5 GB."""
     v = (os.environ.get("video_cpu_offload") or os.environ.get("VIDEO_CPU_OFFLOAD") or "").lower()
@@ -98,13 +74,13 @@ class VideoRunner(BaseRunner):
             torch_dtype=torch.float16 if (self._device == "cuda" or self._use_offload) else torch.float32,
         )
         if self._use_offload and (self._device == "cuda" or torch.cuda.is_available()):
-            pipe.enable_model_cpu_offload()
+            # Use sequential CPU offload: moves each component to GPU only when needed, then back to CPU.
+            # Avoids the enable_model_cpu_offload bug where image_encoder gets cuda input but stays on CPU (RuntimeError: input/weight device mismatch). Slower but reliable on 8 GB.
+            pipe.enable_sequential_cpu_offload()
             if hasattr(pipe, "unet") and hasattr(pipe.unet, "enable_forward_chunking"):
                 pipe.unet.enable_forward_chunking()
             self._decode_chunk_size = min(DECODE_CHUNK_SIZE_VIDEO, 2)  # 2 is safe for 8 GB
-            # Ensure image is on same device as image_encoder (avoids cuda input vs cpu weights error)
-            _patch_pipeline_encode_image_for_offload(pipe)
-            log.info("Video model: using CPU offload + chunking (runs on 8 GB VRAM)")
+            log.info("Video model: using sequential CPU offload + chunking (runs on 8 GB VRAM)")
         else:
             pipe = pipe.to(self._device)
             if self._device == "cuda":
