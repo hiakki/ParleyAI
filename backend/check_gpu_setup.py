@@ -328,15 +328,15 @@ def main() -> int:
                 else:
                     print(f"  Image backend:     would use CPU (CUDA disabled or PyTorch not built with CUDA)")
                     print()
-                    print("  >>> For GPU image generation install PyTorch with CUDA, then restart backend:")
-                    print("      pip install torch --index-url https://download.pytorch.org/whl/cu124")
+                    print("  >>> Re-run setup_windows.bat (or setup_fullstack.sh on Linux) to install PyTorch with CUDA automatically.")
+                    print("      Or run: pip install torch --index-url https://download.pytorch.org/whl/cu124")
             except ImportError:
                 print("  Image backend:     (runners.image not loaded — install requirements-extra.txt)")
         else:
             print("  Image backend:     would use CPU (PyTorch not built with CUDA)")
             print()
-            print("  >>> For GPU image generation install PyTorch with CUDA, then restart backend:")
-            print("      pip install torch --index-url https://download.pytorch.org/whl/cu124")
+            print("  >>> Re-run setup_windows.bat (or setup_fullstack.sh on Linux) to install PyTorch with CUDA automatically.")
+            print("      Or run: pip install torch --index-url https://download.pytorch.org/whl/cu124")
     except ImportError:
         print("  PyTorch:           not installed (install requirements-extra.txt for /api/image)")
         print("  Image backend:     not available")

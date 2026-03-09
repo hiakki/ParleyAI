@@ -450,7 +450,19 @@ if %ERRORLEVEL%==0 (
         )
     )
 ) else (
-    echo [INFO] No NVIDIA GPU detected - image gen will use CPU if used
+    echo [INFO] nvidia-smi not in PATH or no NVIDIA GPU - skipping PyTorch CUDA install
+    echo        If you have an NVIDIA GPU, run this from a terminal where nvidia-smi works,
+    echo        or after setup run: venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu124
+)
+
+:: Verify whether PyTorch sees CUDA (so user knows why image gen uses CPU or GPU)
+echo.
+echo Verifying PyTorch CUDA...
+python -c "import torch; cuda=torch.cuda.is_available(); print('  torch.cuda.is_available():', cuda); exit(0 if cuda else 1)"
+if %ERRORLEVEL%==0 (
+    echo [OK] Image generation will use GPU.
+) else (
+    echo [INFO] PyTorch CUDA not available - image gen will use CPU. To fix: re-run this script from "x64 Native Tools" or a terminal where nvidia-smi works, or run: venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu124
 )
 
 call deactivate
@@ -590,6 +602,7 @@ echo.
 echo Tip: CMD uses "set VAR=value", PowerShell uses "$env:VAR='value'".
 echo.
 echo See README.md for GPU and model recommendations.
+echo If image gen still uses CPU: cd backend ^&^& venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu124
 echo.
 
 pause

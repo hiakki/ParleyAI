@@ -43,7 +43,7 @@ class ImageRunner(BaseRunner):
         if self._device == "cpu":
             log.info(
                 "Image model: using CPU (PyTorch CUDA not available or disabled). "
-                "For GPU: pip install torch --index-url https://download.pytorch.org/whl/cu124 then restart backend."
+                "Re-run setup_windows.bat or setup_fullstack.sh to install PyTorch with CUDA, or: pip install torch --index-url https://download.pytorch.org/whl/cu124"
             )
         from diffusers import StableDiffusionPipeline
         pipe = StableDiffusionPipeline.from_pretrained(

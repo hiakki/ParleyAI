@@ -18,20 +18,13 @@ So GPU reduces latency by roughly **one order of magnitude** (often 8–10× or 
 
 ## What the setup does
 
-- **`setup_windows.bat`**  
-  - Installs base dependencies and `requirements-extra.txt` (which includes CPU-only PyTorch by default).  
-  - If **NVIDIA is detected** (`nvidia-smi` works), it then installs **PyTorch with CUDA** from the official index (`cu124` or `cu121`), so image generation uses the GPU.
+- **Windows:** Run **`setup_windows.bat`**. It installs base deps and `requirements-extra.txt`, then if **NVIDIA is detected** (`nvidia-smi`) it installs **PyTorch with CUDA** automatically (`cu124` or `cu121`). No manual pip step needed.
+- **Linux/macOS:** Run **`./setup_fullstack.sh`**. It installs `requirements-extra.txt`, then if **NVIDIA is detected** it installs PyTorch with CUDA. On Mac (no NVIDIA) image gen uses CPU unless you use Metal builds separately.
 
-- **Manual fix if you already ran setup**  
+- **Manual fix** (re-run setup or install manually)  
   If you already have the backend installed and see “Torch not compiled with CUDA” or image gen is very slow:
 
-  ```bat
-  cd backend
-  venv\Scripts\activate
-  pip install torch --index-url https://download.pytorch.org/whl/cu124
-  ```
-
-  Replace `cu124` with `cu121` if you have CUDA 12.1. Restart the backend after installing.
+  Re-run the setup script, or in the backend venv: `pip install torch --index-url https://download.pytorch.org/whl/cu124` (use `cu121` for CUDA 12.1). Restart the backend after installing.
 
 - **Forcing CPU**  
   Set `CUDA_VISIBLE_DEVICES=-1` (or `cuda_visible_devices_image=-1`) so the image runner uses CPU even when a GPU is available.
