@@ -142,10 +142,12 @@ class VideoRunner(BaseRunner):
                 noise_aug_strength=NOISE_AUG_STRENGTH_VIDEO,
             )
             frames = out.frames[0]
-            if not output_path:
-                fd, output_path = tempfile.mkstemp(suffix=".mp4")
+            if output_path:
+                save_path = output_path
+            else:
+                fd, save_path = tempfile.mkstemp(suffix=".mp4")
                 os.close(fd)
-            return self._frames_to_mp4(frames, output_path, fps_val)
+            return self._frames_to_mp4(frames, save_path, fps_val)
 
         return await asyncio.to_thread(_run)
 
