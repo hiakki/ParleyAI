@@ -26,6 +26,7 @@ import json
 import asyncio
 import base64
 import logging
+logger = logging.getLogger(__name__)
 import queue
 import sys
 import threading
@@ -85,8 +86,6 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout),
     ],
 )
-logger = logging.getLogger(__name__)
-
 # Only one request can use the text model at a time. Requests are queued and served FIFO (no 503 "model busy").
 _transformer_semaphore = asyncio.Semaphore(1)
 
@@ -118,8 +117,10 @@ BATCH_SIZE = int(os.getenv("batch_size_text") or os.getenv("BATCH_SIZE", "512"))
 
 
 def _env_bool(name: str, default: bool = True) -> bool:
-    v = (os.getenv(name) or os.getenv(name.upper()) or ("1" if default else "0")).lower()
-    return v in ("1", "true", "yes", "on")
+    v = (os.getenv(name) or os.getenv(name.upper()) or ("1" if default else "0"))
+    if isinstance(v, str):
+        v = v.strip().lower()
+    return str(v).lower() in ("1", "true", "yes", "on")
 
 
 ENABLE_TEXT = _env_bool("enable_text", True)
@@ -372,11 +373,8 @@ async def chat(request: ChatRequest):
     If stream=True, returns Server-Sent Events (SSE).
     If stream=False, returns complete response as JSON.
     """
-    if not ENABLE_TEXT or transformer is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Text model disabled (enable_text=0) or not loaded",
-        )
+    if not ENABLE_TEXT:
+        raise HTTPException(status_code=503, detail="Text model disabled (enable_text=0)")
     await ensure_text_loaded()
     if transformer is None:
         raise HTTPException(status_code=503, detail="Text model not loaded")
@@ -475,8 +473,8 @@ async def stream_chat(
 @app.post("/api/generate")
 async def generate(prompt: str, max_tokens: int = 512, temperature: float = 0.7):
     """Raw text generation endpoint (non-chat format)."""
-    if not ENABLE_TEXT or transformer is None:
-        raise HTTPException(status_code=503, detail="Text model disabled (enable_text=0) or not loaded")
+    if not ENABLE_TEXT:
+        raise HTTPException(status_code=503, detail="Text model disabled (enable_text=0)")
     await ensure_text_loaded()
     if transformer is None:
         raise HTTPException(status_code=503, detail="Text model not loaded")
@@ -649,8 +647,8 @@ async def _stream_story_sse(messages: list[dict], max_tokens: int, temperature: 
 @app.post("/api/story")
 async def api_story(req: StoryRequest):
     """Generate story/script as JSON. Uses the same LLM. Set stream=true to stream tokens (avoids proxy timeouts)."""
-    if not ENABLE_TEXT or transformer is None:
-        raise HTTPException(status_code=503, detail="Text model disabled (enable_text=0) or not loaded")
+    if not ENABLE_TEXT:
+        raise HTTPException(status_code=503, detail="Text model disabled (enable_text=0)")
     await ensure_text_loaded()
     if transformer is None:
         raise HTTPException(status_code=503, detail="Text model not loaded")
@@ -827,8 +825,8 @@ class OpenAIChatRequest(BaseModel):
 @app.get("/v1/models")
 async def openai_list_models():
     """OpenAI-compatible model list."""
-    if not ENABLE_TEXT or transformer is None:
-        raise HTTPException(status_code=503, detail="Text model disabled (enable_text=0) or not loaded")
+    if not ENABLE_TEXT:
+        raise HTTPException(status_code=503, detail="Text model disabled (enable_text=0)")
     await ensure_text_loaded()
     if transformer is None:
         raise HTTPException(status_code=503, detail="Text model not loaded")
@@ -856,9 +854,8 @@ async def openai_chat_completions(request: OpenAIChatRequest):
     OpenAI Python SDK, curl, etc.).  Wakes up llama-server automatically if
     it was idle-stopped.
     """
-    if not ENABLE_TEXT or transformer is None:
-        raise HTTPException(status_code=503, detail="Text model disabled (enable_text=0) or not loaded")
-
+    if not ENABLE_TEXT:
+        raise HTTPException(status_code=503, detail="Text model disabled (enable_text=0)")
     await ensure_text_loaded()
     if transformer is None:
         raise HTTPException(status_code=503, detail="Text model not loaded")
@@ -1021,9 +1018,8 @@ async def anthropic_messages(request: AnthropicMessagesRequest):
     Claude Code CLI sets ANTHROPIC_BASE_URL and sends requests here.
     Wakes up llama-server automatically if it was idle-stopped.
     """
-    if not ENABLE_TEXT or transformer is None:
-        raise HTTPException(status_code=503, detail="Text model disabled (enable_text=0) or not loaded")
-
+    if not ENABLE_TEXT:
+        raise HTTPException(status_code=503, detail="Text model disabled (enable_text=0)")
     await ensure_text_loaded()
     if transformer is None:
         raise HTTPException(status_code=503, detail="Text model not loaded")
