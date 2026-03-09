@@ -32,24 +32,6 @@ def _resolve_device() -> str:
     return "cpu"
 
 
-def _force_image_encoder_input_to_cpu(pipe) -> None:
-    """With enable_model_cpu_offload the image_encoder can stay on CPU while the pipeline feeds it cuda tensors. Hook the encoder to move its input to CPU so input and weights match."""
-    enc = getattr(pipe, "image_encoder", None)
-    if enc is None:
-        return
-    import torch
-
-    def _pre_hook(module, args):
-        if not args:
-            return args
-        args = list(args) if isinstance(args, (list, tuple)) else [args]
-        if args and isinstance(args[0], torch.Tensor) and args[0].is_cuda:
-            args[0] = args[0].to("cpu")
-        return tuple(args)
-
-    enc.register_forward_pre_hook(_pre_hook, with_kwargs=False)
-
-
 def _use_cpu_offload() -> bool:
     """Use model CPU offload for SVD on 8 GB GPUs. Env video_cpu_offload=1 or auto if VRAM <= 8.5 GB."""
     v = (os.environ.get("video_cpu_offload") or os.environ.get("VIDEO_CPU_OFFLOAD") or "").lower()
@@ -93,13 +75,12 @@ class VideoRunner(BaseRunner):
             torch_dtype=torch.float16 if (self._device == "cuda" or self._use_offload) else torch.float32,
         )
         if self._use_offload and (self._device == "cuda" or torch.cuda.is_available()):
-            pipe.enable_model_cpu_offload()
-            # Ensure image_encoder receives CPU tensors (pipeline may pass cuda); avoids RuntimeError input/weight device mismatch
-            _force_image_encoder_input_to_cpu(pipe)
+            # enable_model_cpu_offload causes input/weight device mismatch on image_encoder; sequential is the only reliable option on 8 GB
+            pipe.enable_sequential_cpu_offload()
             if hasattr(pipe, "unet") and hasattr(pipe.unet, "enable_forward_chunking"):
                 pipe.unet.enable_forward_chunking()
             self._decode_chunk_size = min(DECODE_CHUNK_SIZE_VIDEO, 2)  # 2 is safe for 8 GB
-            log.info("Video model: using CPU offload + chunking (runs on 8 GB VRAM)")
+            log.info("Video model: using sequential CPU offload + chunking (runs on 8 GB VRAM). Use num_frames_video=5–14 for faster runs.")
         else:
             pipe = pipe.to(self._device)
             if self._device == "cuda":
