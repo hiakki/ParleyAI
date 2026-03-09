@@ -31,26 +31,29 @@ def _resolve_device() -> str:
         pass
     return "cpu"
 
-def _attach_image_encoder_device_hook(pipe) -> None:
-    """With CPU offload, the pipeline may feed CUDA tensors to image_encoder which is on CPU. Move input to encoder device."""
+def _patch_pipeline_encode_image_for_offload(pipe) -> None:
+    """With CPU offload, the pipeline uses _execution_device (cuda) for image.to(), but image_encoder may be on CPU. Patch _encode_image to use the encoder's device so input and weights match."""
     enc = getattr(pipe, "image_encoder", None)
     if enc is None:
         return
+    _original_encode_image = pipe._encode_image
 
-    def _pre_hook(module, args):
-        if not args:
-            return args
-        tup = args if isinstance(args, tuple) else (args,)
-        if not hasattr(tup[0], "to"):
-            return args
+    def _encode_image_offload_safe(image, device, num_videos_per_prompt=1, do_classifier_free_guidance=False):
+        # Use the image_encoder's current device so we never have input on cuda and weights on cpu
         try:
-            dev = next(module.parameters()).device
-            out = (tup[0].to(dev),) + tup[1:]
-            return out if isinstance(args, tuple) else out[0]
+            encoder_device = next(enc.parameters()).device
         except StopIteration:
-            return args
+            encoder_device = device
+        # Call original with encoder device so image.to(device=...) matches where the encoder lives
+        return _original_encode_image(
+            pipe,
+            image,
+            encoder_device,
+            num_videos_per_prompt,
+            do_classifier_free_guidance,
+        )
 
-    enc.register_forward_pre_hook(_pre_hook, with_kwargs=False)
+    pipe._encode_image = _encode_image_offload_safe
 
 
 def _use_cpu_offload() -> bool:
@@ -100,8 +103,8 @@ class VideoRunner(BaseRunner):
             if hasattr(pipe, "unet") and hasattr(pipe.unet, "enable_forward_chunking"):
                 pipe.unet.enable_forward_chunking()
             self._decode_chunk_size = min(DECODE_CHUNK_SIZE_VIDEO, 2)  # 2 is safe for 8 GB
-            # Ensure image_encoder receives inputs on its device (CPU when offloaded); avoid cuda/cpu mismatch
-            _attach_image_encoder_device_hook(pipe)
+            # Ensure image is on same device as image_encoder (avoids cuda input vs cpu weights error)
+            _patch_pipeline_encode_image_for_offload(pipe)
             log.info("Video model: using CPU offload + chunking (runs on 8 GB VRAM)")
         else:
             pipe = pipe.to(self._device)
