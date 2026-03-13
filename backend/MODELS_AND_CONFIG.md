@@ -54,15 +54,17 @@ For **CPU vs GPU speed comparison** and how to install PyTorch with CUDA so imag
 
 | Variable | Example | Meaning |
 |----------|---------|--------|
-| `model_path_video` | `/path/to/stable-video-diffusion-img2vid-xt` or HF id | Local path to SVD model dir, or Hugging Face model id. |
-| `num_frames_video` | `25` | Frames per clip. |
-| `fps_video` | `6` | FPS for output. |
-| `decode_chunk_size_video` | `8` | Decode chunk size. |
-| `motion_bucket_id_video` | `127` | Motion bucket id. |
-| `noise_aug_strength_video` | `0.02` | Noise augmentation. |
+| `video_engine` | `svd` or `cogvideox` | `svd` = Stable Video Diffusion (default). `cogvideox` = CogVideoX I2V (needs diffusers ≥ 0.37). |
+| `model_path_video` | HF id or local path | SVD: e.g. `stabilityai/stable-video-diffusion-img2vid-xt`. CogVideoX: e.g. `THUDM/CogVideoX-5b-I2V`. |
+| `num_frames_video` | `14`–`25` | Frames per clip. Fewer = faster. |
+| `num_inference_steps_video` | `14`–`25` | Denoising steps. Fewer = faster, slightly lower quality. |
+| `fps_video` | `6` or `8` | FPS for output. |
+| `decode_chunk_size_video` | `2` (8 GB) or `8` | Use `2` on 8 GB VRAM for SVD. |
+| `motion_bucket_id_video` | `127` | Motion bucket id (SVD). |
+| `noise_aug_strength_video` | `0.02` | Noise augmentation (SVD). |
 | `cuda_visible_devices_video` | (empty) or `-1` | Set to `-1` to force CPU for video. |
 
-On **8 GB VRAM**, the video runner auto-enables CPU offload and uses `decode_chunk_size` ≤ 2 so SVD runs without OOM. Optional: `video_cpu_offload=1` to force offload. For **faster** clips on 8 GB, set `num_frames_video=14` (shorter video, less time per run).
+On **8 GB VRAM**, the video runner auto-enables CPU offload and uses `decode_chunk_size` ≤ 2 for SVD. Optional: `video_cpu_offload=1` to force offload. For **affordable time** (faster clips), set `num_frames_video=14`, `num_inference_steps_video=18`–`20`; see **VIDEO_MODELS_8GB.md** for SVD vs CogVideoX and full 8 GB tuning.
 
 For **direct download links** and where to put the SVD files, see **SVD_VIDEO_MODEL_DOWNLOAD.md**.
 

@@ -534,10 +534,12 @@ def _get_video_runner():
 
 
 class StoryRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     prompt: str
     system: Optional[str] = None
     max_tokens: int = 4096
     stream: bool = False
+    video_id: Optional[str] = None
 
 
 class TTSRequest(BaseModel):
@@ -656,7 +658,7 @@ async def api_story(req: StoryRequest):
     messages = [{"role": "system", "content": system}, {"role": "user", "content": req.prompt}]
 
     user_prompt_preview = (req.prompt or "")[:100]
-    logger.info("[api/story] Story request: stream=%s, max_tokens=%s", req.stream, req.max_tokens)
+    logger.info("[api/story] Story request: stream=%s, max_tokens=%s, video_id=%s", req.stream, req.max_tokens, req.video_id or "—")
     logger.info("[api/story] User prompt: %s%s", user_prompt_preview, "..." if len(req.prompt or "") > 100 else "")
 
     if req.stream:

@@ -47,12 +47,21 @@ def _use_cpu_offload() -> bool:
         pass
     return False
 
-VIDEO_MODEL_ID = os.path.expanduser((os.environ.get("model_path_video") or os.environ.get("VIDEO_MODEL_ID") or "stabilityai/stable-video-diffusion-img2vid-xt").strip())
-NUM_FRAMES_VIDEO = _int_ev("num_frames_video", "NUM_FRAMES_VIDEO", 25)
-FPS_VIDEO = _int_ev("fps_video", "FPS_VIDEO", 6)
+def _video_engine() -> str:
+    v = (os.environ.get("video_engine") or os.environ.get("VIDEO_ENGINE") or "svd").strip().lower()
+    return v if v in ("svd", "cogvideox") else "svd"
+
+VIDEO_ENGINE = _video_engine()
+VIDEO_MODEL_ID = os.path.expanduser((os.environ.get("model_path_video") or os.environ.get("VIDEO_MODEL_ID") or (
+    "THUDM/CogVideoX-5b-I2V" if VIDEO_ENGINE == "cogvideox" else "stabilityai/stable-video-diffusion-img2vid-xt"
+)).strip())
+NUM_FRAMES_VIDEO = _int_ev("num_frames_video", "NUM_FRAMES_VIDEO", 49 if VIDEO_ENGINE == "cogvideox" else 25)
+FPS_VIDEO = _int_ev("fps_video", "FPS_VIDEO", 8 if VIDEO_ENGINE == "cogvideox" else 6)
 DECODE_CHUNK_SIZE_VIDEO = _int_ev("decode_chunk_size_video", "DECODE_CHUNK_SIZE_VIDEO", 8)
+NUM_INFERENCE_STEPS_VIDEO = _int_ev("num_inference_steps_video", "NUM_INFERENCE_STEPS_VIDEO", 20)
 MOTION_BUCKET_ID_VIDEO = _int_ev("motion_bucket_id_video", "MOTION_BUCKET_ID_VIDEO", 127)
 NOISE_AUG_STRENGTH_VIDEO = _float_ev("noise_aug_strength_video", "NOISE_AUG_STRENGTH_VIDEO", 0.02)
+COGVIDEOX_GUIDANCE_SCALE = _float_ev("cogvideox_guidance_scale_video", "COGVIDEOX_GUIDANCE_SCALE", 6.0)
 
 
 class VideoRunner(BaseRunner):
@@ -61,7 +70,9 @@ class VideoRunner(BaseRunner):
         self._pipe = None
         self._device: Optional[str] = None
         self._use_offload: bool = False
-        self._decode_chunk_size: int = DECODE_CHUNK_SIZE_VIDEO  # can be overridden in _load when offload
+        self._decode_chunk_size: int = DECODE_CHUNK_SIZE_VIDEO
+        self._engine: str = VIDEO_ENGINE
+        self._num_inference_steps: int = NUM_INFERENCE_STEPS_VIDEO
 
     async def _load(self) -> None:
         import torch
@@ -69,18 +80,48 @@ class VideoRunner(BaseRunner):
         log = logging.getLogger(__name__)
         self._device = _resolve_device()
         self._use_offload = _use_cpu_offload()
+
+        if self._engine == "cogvideox":
+            try:
+                from diffusers import CogVideoXImageToVideoPipeline
+            except ImportError:
+                log.warning("CogVideoX not available (needs diffusers>=0.30). Falling back to SVD.")
+                self._engine = "svd"
+            else:
+                dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+                pipe = CogVideoXImageToVideoPipeline.from_pretrained(
+                    VIDEO_MODEL_ID,
+                    torch_dtype=dtype,
+                )
+                vram_gb = 0
+                if torch.cuda.is_available():
+                    vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+                needs_offload = self._use_offload or vram_gb <= 12
+                if (self._device == "cuda" or torch.cuda.is_available()) and needs_offload:
+                    # enable_model_cpu_offload needs ~19 GB; sequential + vae slicing/tiling gets to ~5 GB
+                    pipe.enable_sequential_cpu_offload()
+                    pipe.vae.enable_slicing()
+                    pipe.vae.enable_tiling()
+                    log.info("Video model: CogVideoX I2V with sequential CPU offload + VAE slicing/tiling (~5 GB VRAM). WARNING: expect ~20-30 min per video on 8 GB.")
+                else:
+                    pipe = pipe.to(self._device or "cuda")
+                self._pipe = pipe
+                return
+
         from diffusers import StableVideoDiffusionPipeline
+        svd_model_id = os.path.expanduser(
+            (os.environ.get("model_path_video") or os.environ.get("VIDEO_MODEL_ID") or "stabilityai/stable-video-diffusion-img2vid-xt").strip()
+        )
         pipe = StableVideoDiffusionPipeline.from_pretrained(
-            VIDEO_MODEL_ID,
+            svd_model_id,
             torch_dtype=torch.float16 if (self._device == "cuda" or self._use_offload) else torch.float32,
         )
         if self._use_offload and (self._device == "cuda" or torch.cuda.is_available()):
-            # enable_model_cpu_offload causes input/weight device mismatch on image_encoder; sequential is the only reliable option on 8 GB
             pipe.enable_sequential_cpu_offload()
             if hasattr(pipe, "unet") and hasattr(pipe.unet, "enable_forward_chunking"):
                 pipe.unet.enable_forward_chunking()
-            self._decode_chunk_size = min(DECODE_CHUNK_SIZE_VIDEO, 2)  # 2 is safe for 8 GB
-            log.info("Video model: using sequential CPU offload + chunking (runs on 8 GB VRAM). Use num_frames_video=5–14 for faster runs.")
+            self._decode_chunk_size = min(DECODE_CHUNK_SIZE_VIDEO, 2)
+            log.info("Video model: SVD with sequential CPU offload (8 GB VRAM). Use num_frames_video=5–14, num_inference_steps_video=14–20 for faster runs.")
         else:
             pipe = pipe.to(self._device)
             if self._device == "cuda":
@@ -110,21 +151,38 @@ class VideoRunner(BaseRunner):
         nf = num_frames if num_frames is not None else NUM_FRAMES_VIDEO
         fps_val = fps if fps is not None else FPS_VIDEO
         image = Image.open(image_path).convert("RGB")
+        steps = self._num_inference_steps
 
         def _run():
-            out = self._pipe(
-                image,
-                num_frames=nf,
-                decode_chunk_size=self._decode_chunk_size,
-                motion_bucket_id=MOTION_BUCKET_ID_VIDEO,
-                noise_aug_strength=NOISE_AUG_STRENGTH_VIDEO,
-            )
-            frames = out.frames[0]
             if output_path:
                 save_path = output_path
             else:
                 fd, save_path = tempfile.mkstemp(suffix=".mp4")
                 os.close(fd)
+            if self._engine == "cogvideox":
+                img = image.resize((720, 480))
+                # CogVideoX-5b-I2V only supports 49 frames; 1.5 supports 81/161
+                cog_frames = 49 if nf <= 49 else 81
+                out = self._pipe(
+                    img,
+                    prompt=prompt or "smooth motion, high quality",
+                    num_frames=cog_frames,
+                    height=480,
+                    width=720,
+                    num_inference_steps=steps,
+                    guidance_scale=COGVIDEOX_GUIDANCE_SCALE,
+                )
+                frames = out.frames[0]
+            else:
+                out = self._pipe(
+                    image,
+                    num_frames=nf,
+                    decode_chunk_size=self._decode_chunk_size,
+                    motion_bucket_id=MOTION_BUCKET_ID_VIDEO,
+                    noise_aug_strength=NOISE_AUG_STRENGTH_VIDEO,
+                    num_inference_steps=steps,
+                )
+                frames = out.frames[0]
             return self._frames_to_mp4(frames, save_path, fps_val)
 
         return await asyncio.to_thread(_run)
