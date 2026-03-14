@@ -1522,93 +1522,132 @@ Claude Desktop **cannot** connect to a local LLM. It always uses Anthropic's clo
 
 ### Cursor & VS Code (vibe coding, plan-driven builds)
 
-You can use ParleyAI as the LLM backend inside **Cursor** or **VS Code** so chat, Composer, and code actions are powered by your local model. Useful for vibe coding and for implementing an app from a `build/plan.md` step by step.
+Use ParleyAI as the LLM backend for **Cursor**, **VS Code (Continue)**, or any OpenAI-compatible IDE extension. Chat, Composer, code edits, and tab-autocomplete are all powered by your local model.
 
 **1. Start ParleyAI** (backend must be running so the IDE can call it):
 
-```bash
-# Example: Qwen 32B, 20-30 tok/s on 8GB VRAM
-MODEL_FAMILY=Qwen2.5-32B-Instruct QUANT=Q5_K_M CTX=2048 GPU_LAYERS=20 ./start.sh
+Set your model in `backend/.env` (the start scripts read it automatically):
+
+```ini
+model_family_text=Qwen2.5-Coder-14B-Instruct
+model_path_text=C:\Users\root\Downloads\local-llms
+quant_text=Q8_0
+ctx_text=16384
+gpu_layers_text=20
 ```
 
-```powershell
-# Windows
-$env:MODEL_FAMILY='Qwen2.5-32B-Instruct'
-$env:QUANT='Q5_K_M'
-$env:CTX='2048'
-$env:GPU_LAYERS='20'
-$env:MODEL_PATH='C:\path\to\local-llms'
-$env:LFM_IDLE_TIMEOUT='30'
-.\start_windows.bat
+Then start:
+
+```bash
+./start.sh              # Linux / macOS
+.\start_windows.bat     # Windows
+```
+
+Verify the model is loaded:
+
+```bash
+curl http://localhost:8000/v1/models
+# or open http://localhost:8000/api/models in a browser
 ```
 
 **2a. Cursor**
 
-- Open **Settings → Cursor Settings → Models** (or **Features → OpenAI**).
-- Enable **Custom** / **OpenAI-compatible** and set:
-  - **Base URL**: `http://localhost:8000/v1`
-  - **API key**: any non-empty string (e.g. `parley`); ParleyAI does not validate it.
-- Set **Model** to the ID ParleyAI reports, e.g. `Qwen2.5-32B-Instruct` (or run `curl http://localhost:8000/v1/models` to see `data[0].id`).
+1. Open **Settings → Cursor Settings → Models**.
+2. Add an **OpenAI-compatible** model:
+   - **Base URL**: `http://localhost:8000/v1` (or your tunnel URL + `/v1`)
+   - **API Key**: any non-empty string (e.g. `parley`) — ParleyAI does not validate it.
+   - **Model name**: the value from `curl http://localhost:8000/v1/models` → `data[0].id` (e.g. `Qwen2.5-Coder-14B-Instruct`).
+3. Select the model from the model picker in Chat or Composer.
 
-If Cursor uses a tunnel for some features, you can set Base URL to your ParleyAI tunnel URL + `/v1` (e.g. `https://your-tunnel.trycloudflare.com/v1`) when ParleyAI was started with `TUNNEL=on`.
+With `TUNNEL=on`, replace `localhost:8000` with your tunnel URL (e.g. `https://xyz.trycloudflare.com/v1`). The tunnel URL changes each restart.
 
 **2b. VS Code (Continue extension)**
 
 1. Install the **[Continue](https://marketplace.visualstudio.com/items?itemName=Continue.continue)** extension.
-2. Open Continue’s config: **Continue Chat** (e.g. `Ctrl+L` / `Cmd+L`) → click the **gear** next to the model selector → **Open config.json** (or edit `~/.continue/config.json`).
-3. Add an OpenAI-compatible provider pointing at ParleyAI:
+2. Copy the ready-made config into Continue's config directory:
 
-```json
-{
-  "models": [
-    {
-      "title": "ParleyAI (Qwen 32B)",
-      "provider": "openai",
-      "model": "Qwen2.5-32B-Instruct",
-      "apiBase": "http://localhost:8000/v1",
-      "apiKey": "parley"
-    }
-  ]
-}
+```bash
+# Linux / macOS
+cp continue-config.yaml ~/.continue/config.yaml
+
+# Windows (CMD)
+copy continue-config.yaml %USERPROFILE%\.continue\config.yaml
+
+# Windows (PowerShell)
+Copy-Item continue-config.yaml "$env:USERPROFILE\.continue\config.yaml"
 ```
 
-Use the same `model` value as returned by `GET http://localhost:8000/v1/models` (e.g. `Qwen2.5-32B-Instruct`). If you use a different ParleyAI model, set `model` to that family’s name. If Continue uses `config.yaml` instead, add the same provider with `apiBase`, `model`, and `apiKey`.
+3. Edit `~/.continue/config.yaml` — set `model` to your model family and `apiBase` to localhost or your tunnel URL.
 
-**Continue config.yaml example (tunnel URL):**
+The template (`continue-config.yaml` in the repo root) includes chat, edit, apply, and tab-autocomplete:
 
 ```yaml
+name: ParleyAI
+version: 1.0.0
+schema: v1
+
 models:
-  - name: ParleyAI Qwen 32B
+  - name: ParleyAI Chat
     provider: openai
-    apiBase: "https://YOUR-CURRENT-TUNNEL.trycloudflare.com/v1"
-    model: Qwen2.5-32B-Instruct
-    apiKey: "parley"
+    model: Qwen2.5-Coder-14B-Instruct        # ← your model_family_text
+    apiBase: http://localhost:8000/v1          # ← or tunnel URL + /v1
+    apiKey: parley
     roles:
       - chat
       - edit
       - apply
+    defaultCompletionOptions:
+      contextLength: 16384                     # ← must match ctx_text in backend/.env
+      maxTokens: 4096
+      temperature: 0.7
+
+  - name: ParleyAI Autocomplete
+    provider: openai
+    model: Qwen2.5-Coder-14B-Instruct
+    apiBase: http://localhost:8000/v1
+    apiKey: parley
+    roles:
+      - autocomplete
+    defaultCompletionOptions:
+      contextLength: 16384
+    autocompleteOptions:
+      debounceDelay: 300
+      maxPromptTokens: 2048
+      onlyMyCode: true
+
+context:
+  - provider: file
+  - provider: code
+  - provider: diff
+  - provider: terminal
 ```
 
-- Use **`provider: openai`** (not `ParleyAI`) — the client uses the OpenAI API format with your custom `apiBase`.
-- Use **`model: Qwen2.5-32B-Instruct`** only — no `:Q5_K_M`; quantization is set on the server via `QUANT`.
-- Replace **`YOUR-CURRENT-TUNNEL`** with the URL printed when you run ParleyAI with `TUNNEL=on` (the URL changes every time you start the tunnel).
+> **Important**: `ctx_text` in `backend/.env` must be `>=` the `contextLength` above. If you get "exceeds context size" errors, increase `ctx_text` and restart the backend.
+
+**Notes:**
+
+- `provider: openai` — Continue uses the OpenAI API format; `apiBase` points it at ParleyAI.
+- `model` must match what `GET /v1/models` returns (the `model_family_text` value).
+- `apiKey` can be any non-empty string — ParleyAI does not validate it.
+- Quantization is set server-side via `quant_text` in `.env`, not in the IDE config.
+- `config.json` is deprecated by Continue; use `config.yaml` (see [migration guide](https://docs.continue.dev/reference/yaml-migration)).
 
 **2c. VS Code (other OpenAI-compatible extensions)**
 
-Any extension that lets you set a custom **OpenAI API base URL** and **API key** can use ParleyAI:
+Any extension that supports a custom **OpenAI API base URL** works with ParleyAI:
 
-- **Base URL**: `http://localhost:8000/v1`
-- **API key**: any string (e.g. `parley`)
-- **Model**: value from `GET http://localhost:8000/v1/models` → `data[0].id`
+| Setting | Value |
+|---------|-------|
+| **Base URL** | `http://localhost:8000/v1` (or tunnel URL + `/v1`) |
+| **API Key** | any string (e.g. `parley`) |
+| **Model** | value from `GET /v1/models` → `data[0].id` |
 
 **3. Plan-driven app build (Cursor or VS Code)**
 
-1. In your repo, add a **`build/plan.md`** (or `plan.md`) with:
-   - App goal, tech stack, and features in order
-   - Per-feature or per-section acceptance criteria
-2. In **Cursor**: Open `build/plan.md`, then in **Composer** or **Chat** say e.g. *“Implement the app from this plan step by step”* or *“Implement section 2 from build/plan.md”*. The AI uses ParleyAI (if selected) and your plan as context.
-3. In **VS Code (Continue)**: Open `build/plan.md`, start a Continue chat, and ask e.g. *“Following build/plan.md, implement the auth module”*. Continue sends that to ParleyAI.
-4. You run the app and tests locally; the AI proposes edits and you accept or refine. For long plans, paste only the relevant section into the chat to stay within context limits, or use a larger `CTX` (e.g. 8192) if your VRAM allows.
+1. Add a **`build/plan.md`** to your repo with app goal, tech stack, features, and acceptance criteria.
+2. In **Cursor**: Open `build/plan.md`, then in Composer or Chat say *"Implement the app from this plan step by step"*.
+3. In **VS Code (Continue)**: Start a Continue chat and ask *"Following build/plan.md, implement the auth module"*.
+4. For long plans, paste only the relevant section into the chat to stay within context limits, or increase `ctx_text` in `.env`.
 
 ### Quick test with curl
 
