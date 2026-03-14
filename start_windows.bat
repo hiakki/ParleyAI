@@ -91,16 +91,25 @@ echo   ParleyAI - Windows Startup
 echo ========================================
 echo.
 
-:: Load tunnel (and optional other) vars from backend\.env if present
+:: Load config from backend\.env if present
 if exist "backend\.env" (
     for /f "usebackq eol=# tokens=1,* delims==" %%a in ("backend\.env") do (
         set "envkey=%%a"
         set "envval=%%b"
         if not "!envkey!"=="" (
             if "!envkey: =!"=="!envkey!" (
+                :: Tunnel vars
                 if "!envkey!"=="TUNNEL" set "TUNNEL=!envval!"
                 if "!envkey!"=="TUNNEL_TOOL" set "TUNNEL_TOOL=!envval!"
                 if "!envkey!"=="SUBDOMAIN" set "SUBDOMAIN=!envval!"
+                :: Text model vars — only apply if user hasn't already set the
+                :: top-level env vars (e.g. set MODEL_FAMILY=... before running)
+                if "!envkey!"=="model_family_text" if "%MODEL_FAMILY%"=="" set "MODEL_FAMILY=!envval!"
+                if "!envkey!"=="model_path_text"   if "%MODEL_PATH%"==""   set "MODEL_PATH=!envval!"
+                if "!envkey!"=="quant_text"         if "%QUANT%"==""        set "QUANT=!envval!"
+                if "!envkey!"=="ctx_text"           if "%CTX%"==""          set "CTX=!envval!"
+                if "!envkey!"=="gpu_layers_text"    if "%GPU_LAYERS%"==""   set "GPU_LAYERS=!envval!"
+                if "!envkey!"=="batch_size_text"    if "%BATCH_SIZE%"==""   set "BATCH_SIZE=!envval!"
             )
         )
     )

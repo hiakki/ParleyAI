@@ -83,7 +83,15 @@ echo "🦙 ParleyAI — Local Chat"
 echo "=================================="
 echo ""
 
-# Configuration
+# Map backend/.env text-model vars to start-script vars (if not already set)
+: "${MODEL_FAMILY:=$model_family_text}"
+: "${MODEL_PATH:=$model_path_text}"
+: "${QUANT:=$quant_text}"
+: "${CTX:=$ctx_text}"
+: "${GPU_LAYERS:=$gpu_layers_text}"
+: "${BATCH_SIZE:=$batch_size_text}"
+
+# Configuration (final defaults for anything still unset)
 export MODEL_FAMILY="${MODEL_FAMILY:-Llama-3.3-70B-Instruct}"   # Llama-3.3-70B-Instruct, LFM2-24B-A2B, Qwen2.5-32B-Instruct, Mistral-Small-3.1-24B-Instruct, or custom
 export QUANT="${QUANT:-Q4_K_M}"
 export CTX="${CTX:-2048}"
