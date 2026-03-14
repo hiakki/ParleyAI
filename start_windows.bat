@@ -193,12 +193,9 @@ if defined MODEL_PATH echo   Model Path:   %MODEL_PATH%
 if defined LLAMA_SERVER_PATH echo   Llama Server: %LLAMA_SERVER_PATH%
 echo.
 
-:: Server-based model families require llama-server
-set "_NEEDS_SERVER=0"
-if /i "%MODEL_FAMILY%"=="LFM2-24B-A2B" set "_NEEDS_SERVER=1"
-if /i "%MODEL_FAMILY%"=="Qwen2.5-32B-Instruct" set "_NEEDS_SERVER=1"
-if /i "%MODEL_FAMILY%"=="Mistral-Small-3.1-24B-Instruct" set "_NEEDS_SERVER=1"
-if /i "%MODEL_FAMILY%"=="custom" set "_NEEDS_SERVER=1"
+REM Any family except Llama-3.3-70B-Instruct uses llama-server
+set "_NEEDS_SERVER=1"
+if /i "%MODEL_FAMILY%"=="Llama-3.3-70B-Instruct" set "_NEEDS_SERVER=0"
 if "%_NEEDS_SERVER%"=="1" (
     where llama-server >nul 2>&1
     if !ERRORLEVEL! neq 0 (

@@ -500,37 +500,26 @@ class LlamaTransformer:
         self.model_family = model_family
         self.verbose = verbose
         
-        if model_family not in MODEL_FAMILIES:
-            raise ValueError(
-                f"Unknown model_family: {model_family}. "
-                f"Options: {list(MODEL_FAMILIES.keys())}"
-            )
-        family_info = MODEL_FAMILIES[model_family]
-        self._quant_options = family_info["quants"]
-        self._chat_template = family_info["chat_template"]
-        self._family_name = family_info["name"]
-        
-        if quantization not in self._quant_options:
-            raise ValueError(
-                f"Unknown quantization for {model_family}: {quantization}. "
-                f"Options: {list(self._quant_options.keys())}"
-            )
-        
-        quant_info = self._quant_options[quantization]
-        
+        family_info = MODEL_FAMILIES.get(model_family, {})
+        self._quant_options = family_info.get("quants", {})
+        self._chat_template = family_info.get("chat_template", "chatml")
+        self._family_name = family_info.get("name", model_family)
+
+        quant_info = self._quant_options.get(quantization)
+
         if verbose:
             print(f"\n{'='*60}")
             print(f"{self._family_name} - {quantization} Quantization")
             print(f"{'='*60}")
-            print(f"Model size: ~{quant_info['size_gb']}GB")
-            print(f"Quality: {quant_info['quality']}")
-            print(f"Recommended RAM: {quant_info['recommended_ram']}")
+            if quant_info:
+                print(f"Model size: ~{quant_info['size_gb']}GB")
+                print(f"Quality: {quant_info['quality']}")
+                print(f"Recommended RAM: {quant_info['recommended_ram']}")
             print(f"Context window: {n_ctx} tokens")
             print(f"Memory mapping: {'Enabled' if use_mmap else 'Disabled'}")
             print(f"{'='*60}\n")
-        
-        # Find or download model
-        if model_path is None:
+
+        if model_path is None and quant_info:
             model_path = self._find_local_model(
                 model_family, quantization, quant_info["filename"], verbose
             )
@@ -909,11 +898,14 @@ class LlamaTransformer:
     @classmethod
     def list_quantizations(cls, model_family: str = "Llama-3.3-70B-Instruct"):
         """Print available quantization options for a model family."""
-        if model_family not in MODEL_FAMILIES:
-            print(f"Unknown model_family: {model_family}. Options: {list(MODEL_FAMILIES.keys())}")
+        family_info = MODEL_FAMILIES.get(model_family)
+        if family_info is None:
+            print(f"'{model_family}' is not a built-in family (no pre-defined quant list).")
+            print(f"Built-in families: {list(MODEL_FAMILIES.keys())}")
+            print("You can still use any family name with model_path_text pointing to your GGUF.")
             return
-        quants = MODEL_FAMILIES[model_family]["quants"]
-        name = MODEL_FAMILIES[model_family]["name"]
+        quants = family_info["quants"]
+        name = family_info["name"]
         print(f"\n{name} - Quantization Options:")
         print("=" * 70)
         print(f"{'Quant':<10} {'Size':<10} {'RAM Needed':<12} {'Quality'}")
@@ -976,8 +968,8 @@ class LlamaServerTransformer:
         self.verbose = verbose
         self._base_url = f"http://127.0.0.1:{self.LLAMA_SERVER_PORT}"
 
-        family_info = MODEL_FAMILIES[model_family]
-        self._family_name = family_info["name"]
+        family_info = MODEL_FAMILIES.get(model_family, {})
+        self._family_name = family_info.get("name", model_family)
 
         self._llama_server_bin = self._resolve_llama_server_bin()
         if self._llama_server_bin is None:
@@ -1327,13 +1319,23 @@ def get_transformer(
     if _transformer_instance is not None:
         return _transformer_instance
 
-    if model_family not in MODEL_FAMILIES:
-        raise ValueError(
-            f"Unknown model_family: {model_family}. "
-            f"Options: {list(MODEL_FAMILIES.keys())}"
-        )
+    family_info = MODEL_FAMILIES.get(model_family)
+    is_known = family_info is not None
 
-    family_info = MODEL_FAMILIES[model_family]
+    if not is_known:
+        if model_path is None:
+            raise ValueError(
+                f"model_family '{model_family}' is not a built-in family "
+                f"({', '.join(MODEL_FAMILIES.keys())}). "
+                "Provide model_path_text pointing to the directory or .gguf file."
+            )
+        family_info = {
+            "name": model_family,
+            "chat_template": "chatml",
+            "use_server": True,
+            "quants": {},
+        }
+
     use_server = family_info.get("use_server", False)
 
     if use_server:
@@ -1346,7 +1348,7 @@ def get_transformer(
                     "Set it to the full path of your .gguf file."
                 )
             quantization = "custom"
-        else:
+        elif is_known:
             quant_info = family_info["quants"].get(quantization)
             if quant_info is None:
                 raise ValueError(
@@ -1362,6 +1364,13 @@ def get_transformer(
                         repo_id=quant_info["repo"],
                         filename=quant_info["filename"],
                     )
+
+        if model_path is None:
+            raise ValueError(
+                f"No model_path resolved for {model_family}/{quantization}. "
+                "Set model_path_text to the directory or .gguf file."
+            )
+
         _transformer_instance = LlamaServerTransformer(
             model_path=model_path,
             model_family=model_family,
@@ -1441,7 +1450,8 @@ def main():
         return
     
     # Memory-efficient settings
-    print(f"\n🦙 Initializing {MODEL_FAMILIES[args.model_family]['name']}...\n")
+    family_name = MODEL_FAMILIES.get(args.model_family, {}).get("name", args.model_family)
+    print(f"\n🦙 Initializing {family_name}...\n")
     
     transformer = LlamaTransformer(
         model_path=args.model_path,

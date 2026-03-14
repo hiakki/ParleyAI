@@ -185,6 +185,8 @@ def resolve_model_path(path_env: str | None, quant: str, model_family: str) -> s
     if os.path.isdir(path):
         quants = MODEL_FAMILIES.get(model_family, {}).get("quants", {})
         filename = quants.get(quant, {}).get("filename") if quant in quants else None
+        if filename is None:
+            filename = f"{model_family}-{quant}.gguf"
 
         # Check {path}/{model_family}/{quant}/ first
         nested = os.path.join(path, model_family, quant)
