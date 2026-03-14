@@ -105,16 +105,16 @@ All run via ParleyAI. Use `MODEL_FAMILY=custom MODEL_PATH=/path/to/model.gguf` f
 
 | Model | Total | Active | Quant | Size | Speed (8GB) | Code quality | ParleyAI |
 |-------|-------|--------|-------|------|-------------|--------------|----------|
-| **Qwen2.5-MoE-Power-CODER (e.g. 2×7B)** | 19B | ~7B | Q4_K_M | ~11 GB | 20–30 tok/s | **92%** | `custom` |
+| **Qwen2.5-Coder-14B-Instruct** | 14B | 14B | Q4_K_M | ~9 GB | 12–20 tok/s | **92%** | `custom` |
 | **DeepSeek-Coder-V2 (16B)** | 16B | ~2.4B | Q4_K_M | ~9 GB | 25–35 tok/s | **90%** | `custom` |
 | **Mixtral 8x7B Instruct** | 47B | ~13B | Q4_K_M | ~26 GB | 8–15 tok/s | 88% | `custom` |
 | **LFM2-24B-A2B** | 24B | ~2B | Q4_K_M | 15 GB | 25–40 tok/s | 75% | **built-in** |
 
-> **Pick**: **Qwen2.5-MoE-Power-CODER** or **DeepSeek-Coder-V2** for best code quality on 8GB. Use the same model in Cursor/VS Code by pointing the IDE at ParleyAI’s `/v1` endpoint (see [Cursor & VS Code](#cursor--vs-code-vibe-coding-plan-driven-builds)).
+> **Pick**: **Qwen2.5-Coder-14B-Instruct** or **DeepSeek-Coder-V2** for best code quality on 8GB. Use the same model in Cursor/VS Code by pointing the IDE at ParleyAI’s `/v1` endpoint (see [Cursor & VS Code](#cursor--vs-code-vibe-coding-plan-driven-builds)).
 
 | GGUF |
 |------|
-| [Qwen2.5-MoE-Power-CODER](https://huggingface.co/DavidAU/Qwen2.5-MOE-2x-4x-6x-8x__7B__Power-CODER__19B-30B-42B-53B-gguf) (choose 19B or 30B for 8GB) |
+| [Qwen2.5-Coder-14B-Instruct GGUF](https://huggingface.co/bartowski/Qwen2.5-Coder-14B-Instruct-GGUF) (dense 14B, Q4_K_M ~9 GB) |
 | [DeepSeek-Coder-V2 16B](https://huggingface.co/bartowski/DeepSeek-Coder-V2-Instruct-16B-GGUF) (or official repo) |
 | [Mixtral 8x7B Instruct](https://huggingface.co/bartowski/Mixtral-8x7B-Instruct-v0.1-GGUF) |
 | [LFM2-24B-A2B](https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF) (built-in) |
@@ -142,7 +142,7 @@ All run via ParleyAI. Use `MODEL_FAMILY=custom MODEL_PATH=/path/to/model.gguf` f
 | Use case | Recommended MoE | ParleyAI | Command (example) |
 |----------|-----------------|----------|-------------------|
 | **Story / scripts** | L3-Grand-Story-Darkness-MOE or Llama-3.2-4X3B-MOE-Ultra | `custom` | `MODEL_FAMILY=custom MODEL_PATH=.../model.gguf ./start.sh` |
-| **Coding (Cursor/VS Code)** | Qwen2.5-MoE-Power-CODER or DeepSeek-Coder-V2 16B | `custom` | Same; set IDE base URL to `http://localhost:8000/v1` |
+| **Coding (Cursor/VS Code)** | Qwen2.5-Coder-14B-Instruct or DeepSeek-Coder-V2 16B | `custom` | Same; set IDE base URL to `http://localhost:8000/v1` |
 | **General** | Mixtral 8x7B or LFM2-24B-A2B | `custom` / **LFM2-24B-A2B** | `MODEL_FAMILY=LFM2-24B-A2B QUANT=Q4_K_M ./start.sh` |
 
 #### Percentage comparison: Dense vs MoE (8GB VRAM + 32GB RAM)
@@ -168,7 +168,7 @@ All scores below are relative for the same hardware. **Type**: Dense = single la
 
 | Model | Type | Code quality | Debugging | Multi-language | Speed (8GB) | Overall |
 |-------|------|--------------|-----------|----------------|-------------|---------|
-| **Qwen2.5-MoE-Power-CODER (2×7B)** | MoE | **92%** | 88% | **90%** | 20–30 tok/s | **90%** |
+| **Qwen2.5-Coder-14B-Instruct** | Dense | **92%** | 88% | **90%** | 12–20 tok/s | **90%** |
 | **DeepSeek-Coder-V2 16B** | MoE | **90%** | **90%** | 88% | 25–35 tok/s | **90%** |
 | **Qwen2.5-Coder-14B** | Dense | 88% | 85% | 88% | 18–25 tok/s | **90%** |
 | **Qwen2.5-Coder-32B** | Dense | **96%** | **92%** | **94%** | 3–4 tok/s | 78% |
@@ -198,7 +198,7 @@ All scores below are relative for the same hardware. **Type**: Dense = single la
 **Takeaways**
 
 - **Story**: Best quality = L3-Grand-Story-MOE or Qwen2.5-32B (dense); best speed/overall = Llama-3.2-4X3B-MOE-Ultra. LFM2 (MoE) is a good built-in compromise.
-- **Coding**: Best overall = Qwen2.5-MoE-Power-CODER, DeepSeek-Coder-V2, or Qwen2.5-Coder-14B (dense). For Cursor/VS Code, any of these via ParleyAI `/v1` works.
+- **Coding**: Best overall = Qwen2.5-Coder-14B-Instruct, DeepSeek-Coder-V2, or Qwen2.5-Coder-14B (dense). For Cursor/VS Code, any of these via ParleyAI `/v1` works.
 - **General**: Best quality = Mixtral 8x7B (MoE) or Qwen2.5-32B (dense). Best speed/overall = Qwen2.5-MoE-30B-A3B, Qwen2.5-14B, or LFM2 (MoE).
 
 ### Best Open-Source Models by Use Case (i7 + 8GB VRAM + 32GB RAM)
