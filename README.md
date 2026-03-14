@@ -1595,7 +1595,6 @@ models:
     roles:
       - chat
       - edit
-      - apply
     defaultCompletionOptions:
       contextLength: 16384                     # ← must match ctx_text in backend/.env
       maxTokens: 4096
