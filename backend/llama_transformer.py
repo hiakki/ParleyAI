@@ -973,14 +973,27 @@ class LlamaServerTransformer:
 
         self._llama_server_bin = self._resolve_llama_server_bin()
         if self._llama_server_bin is None:
+            if sys.platform == "darwin":
+                hint = (
+                    "macOS: brew install llama.cpp\n"
+                    "Or from repo root: ./setup_llama_server.sh\n"
+                )
+            elif sys.platform == "win32":
+                hint = (
+                    "Windows: run setup_windows.bat (downloads llama-server), or place llama-server.exe at:\n"
+                    "  .\\llama-cpp\\llama-server.exe or backend\\bin\\llama-server.exe\n"
+                    "  Or set LLAMA_SERVER_PATH=C:\\path\\to\\llama-server.exe\n"
+                )
+            else:
+                hint = (
+                    "Linux: from repo root run ./setup_llama_server.sh (downloads from GitHub releases).\n"
+                    "Or set LLAMA_SERVER_PATH to the llama-server binary, or install a package that provides it on PATH.\n"
+                )
             raise RuntimeError(
                 "llama-server not found.\n"
                 "Set LLAMA_SERVER_PATH to the llama-server executable, or put it on PATH.\n"
-                "macOS: brew install llama.cpp\n"
-                "Windows: download llama-server.exe from llama.cpp releases and either:\n"
-                "  1) place it at backend\\bin\\llama-server.exe, or\n"
-                "  2) set LLAMA_SERVER_PATH=C:\\path\\to\\llama-server.exe\n"
-                "Releases: https://github.com/ggml-org/llama.cpp/releases"
+                + hint
+                + "Releases: https://github.com/ggml-org/llama.cpp/releases"
             )
 
         if not Path(model_path).exists():

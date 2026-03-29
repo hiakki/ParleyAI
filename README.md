@@ -748,6 +748,8 @@ If apt install fails (no root/sudo, or non-Debian Linux), install the same packa
 
 On Linux, ParleyAI uses a **CPU** build of `llama-cpp-python` unless `nvcc` (CUDA toolkit) is on `PATH`, in which case the script enables **CUDA** for that package.
 
+**llama-server:** Text models that are not loaded in-process via `llama-cpp-python` (e.g. **Qwen**, **LFM2**, **Mistral**, **custom** paths, or any **arbitrary `model_family_text`**) need the **`llama-server`** executable. `setup_fullstack.sh` runs **`./setup_llama_server.sh`** when `llama-server` is not already on `PATH` or under **`llama-cpp/llama-server`** — it downloads the official **Ubuntu x64** or **macOS** build from [llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases). **Windows:** run **`setup_windows.bat`** (same idea). You can also set **`LLAMA_SERVER_PATH`** in `backend/.env` to a full path to the binary.
+
 ### Windows (PowerShell)
 ```powershell
 # One-time setup

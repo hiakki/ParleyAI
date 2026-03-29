@@ -178,6 +178,16 @@ cd ..
 echo "   ✓ Backend ready"
 echo ""
 
+# llama-server (required for Qwen/LFM2/Mistral/custom/arbitrary family — not for in-process Llama 3.3 70B-only)
+if ! command -v llama-server &>/dev/null && [ ! -x "$SCRIPT_DIR/llama-cpp/llama-server" ]; then
+    echo "📦 Setting up llama-server..."
+    if [ -f "$SCRIPT_DIR/setup_llama_server.sh" ]; then
+        chmod +x "$SCRIPT_DIR/setup_llama_server.sh" 2>/dev/null || true
+        bash "$SCRIPT_DIR/setup_llama_server.sh" || echo "   ⚠️  llama-server setup failed — run ./setup_llama_server.sh later or set LLAMA_SERVER_PATH (see README)."
+    fi
+    echo ""
+fi
+
 # Setup Frontend
 echo "📦 Setting up Frontend..."
 cd frontend
