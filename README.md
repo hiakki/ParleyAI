@@ -750,6 +750,14 @@ sudo apt update && sudo apt install -y python3-venv
 # sudo apt install -y python3.12-venv
 ```
 
+**Linux (compile `llama-cpp-python`):** the setup script builds `llama-cpp-python` from source. You need a C/C++ toolchain and CMake:
+
+```bash
+sudo apt update && sudo apt install -y build-essential cmake
+```
+
+Without `gcc`, pip fails with “Could not find the compiler … x86_64-linux-gnu-gcc”. On Linux, ParleyAI uses a **CPU** build of `llama-cpp-python` unless `nvcc` (CUDA toolkit) is on `PATH`, in which case the script enables **CUDA** for that package.
+
 ### Windows (PowerShell)
 ```powershell
 # One-time setup

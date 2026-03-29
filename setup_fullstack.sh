@@ -44,11 +44,36 @@ fi
 
 source venv/bin/activate
 
+# llama-cpp-python: platform-specific build (Metal is macOS-only; Linux needs gcc to compile)
 if python -c "import llama_cpp" 2>/dev/null; then
     echo "   ✓ llama-cpp-python already installed"
 else
-    echo "   Installing llama-cpp-python with Metal..."
-    CMAKE_ARGS="-DLLAMA_METAL=on" pip install llama-cpp-python --no-cache-dir
+    _UNAME_S="$(uname -s)"
+    if [ "$_UNAME_S" = "Linux" ]; then
+        if ! command -v gcc &>/dev/null; then
+            echo ""
+            echo "❌ C compiler (gcc) not found. llama-cpp-python builds from source on Linux."
+            echo "   Install build tools, then re-run this script:"
+            echo ""
+            echo "      sudo apt update && sudo apt install -y build-essential cmake"
+            echo ""
+            exit 1
+        fi
+        # CUDA build only if the toolkit is present (driver alone is not enough)
+        if command -v nvcc &>/dev/null; then
+            echo "   Installing llama-cpp-python (CUDA)..."
+            CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --no-cache-dir
+        else
+            echo "   Installing llama-cpp-python (CPU; for GPU-accelerated llama-cpp install nvidia-cuda-toolkit or set up CUDA + nvcc, then re-run)..."
+            pip install llama-cpp-python --no-cache-dir
+        fi
+    elif [ "$_UNAME_S" = "Darwin" ]; then
+        echo "   Installing llama-cpp-python (Metal)..."
+        CMAKE_ARGS="-DLLAMA_METAL=on" pip install llama-cpp-python --no-cache-dir
+    else
+        echo "   Installing llama-cpp-python..."
+        pip install llama-cpp-python --no-cache-dir
+    fi
 fi
 
 echo "   Checking Python dependencies..."
