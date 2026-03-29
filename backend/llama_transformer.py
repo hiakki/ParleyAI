@@ -999,6 +999,7 @@ class LlamaServerTransformer:
         self._process: Optional[subprocess.Popen] = None
         self._lock = threading.Lock()
         self._idle_timer: Optional[threading.Timer] = None
+        self._active_requests = 0
 
         atexit.register(self.shutdown)
 
@@ -1050,6 +1051,7 @@ class LlamaServerTransformer:
         """Start llama-server if not already running. Thread-safe."""
         with self._lock:
             self._cancel_idle_timer()
+            self._active_requests += 1
             if self._process and self._process.poll() is None:
                 return
             if self.verbose:
@@ -1060,14 +1062,18 @@ class LlamaServerTransformer:
                 stderr=subprocess.STDOUT,
             )
             if not self._wait_for_ready(timeout=300):
+                self._active_requests -= 1
                 self.shutdown()
                 raise RuntimeError("llama-server failed to start within timeout")
             if self.verbose:
                 print("✓ llama-server ready!")
 
     def _mark_idle(self):
-        """Reset the idle timer after a request completes."""
+        """Decrement active count; start idle timer only when no requests remain."""
         with self._lock:
+            self._active_requests = max(0, self._active_requests - 1)
+            if self._active_requests > 0:
+                return
             self._cancel_idle_timer()
             if self.IDLE_TIMEOUT_S > 0:
                 self._idle_timer = threading.Timer(
@@ -1082,6 +1088,9 @@ class LlamaServerTransformer:
             self._idle_timer = None
 
     def _idle_shutdown(self):
+        with self._lock:
+            if self._active_requests > 0:
+                return
         if self.verbose:
             print(f"💤 No requests for {self.IDLE_TIMEOUT_S}s — stopping llama-server to free RAM")
         self.shutdown()
@@ -1143,9 +1152,9 @@ class LlamaServerTransformer:
     ) -> str | Generator[str, None, None]:
         self._ensure_running()
         messages = self._normalize_messages(messages)
+        if stream:
+            return self._chat_stream(messages, max_tokens, temperature)
         try:
-            if stream:
-                return self._chat_stream(messages, max_tokens, temperature)
             body = _json.dumps({
                 "model": self._family_name,
                 "messages": messages,

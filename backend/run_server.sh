@@ -12,10 +12,11 @@ export BATCH_SIZE="${BATCH_SIZE:-512}"  # Larger = faster prompt processing
 export PORT="${PORT:-8000}"
 export MODEL_PATH="${MODEL_PATH:-}"
 
-# Check for venv
-if [ ! -d "venv" ]; then
-    echo "❌ Virtual environment not found!"
-    echo "   Run: python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt"
+# Check for a valid venv (directory alone is not enough)
+if [ ! -f "venv/bin/activate" ]; then
+    echo "❌ Virtual environment missing or broken (no venv/bin/activate)."
+    echo "   Run from backend/: python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt"
+    echo "   Or run: ../setup_fullstack.sh"
     exit 1
 fi
 

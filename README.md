@@ -742,6 +742,14 @@ huggingface-cli download bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503
 ./start.sh
 ```
 
+**Debian / Ubuntu (minimal server images):** install venv support first or `python3 -m venv` fails with “ensurepip is not available”:
+
+```bash
+sudo apt update && sudo apt install -y python3-venv
+# Or match your Python minor version, e.g. Python 3.12:
+# sudo apt install -y python3.12-venv
+```
+
 ### Windows (PowerShell)
 ```powershell
 # One-time setup
@@ -1595,6 +1603,7 @@ models:
     roles:
       - chat
       - edit
+      - apply
     defaultCompletionOptions:
       contextLength: 16384                     # ← must match ctx_text in backend/.env
       maxTokens: 4096

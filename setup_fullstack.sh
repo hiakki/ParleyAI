@@ -15,7 +15,27 @@ echo ""
 echo "📦 Setting up Backend..."
 cd backend
 
-if [ ! -d "venv" ]; then
+# Debian/Ubuntu minimal images ship python3 without venv; `python3 -m venv` then fails with ensurepip errors.
+if ! python3 -c "import ensurepip" 2>/dev/null; then
+    PY_VER="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "3")"
+    echo ""
+    echo "❌ Python venv support (ensurepip) is not available."
+    echo "   On Debian/Ubuntu, install the matching venv package, then re-run this script:"
+    echo ""
+    echo "      sudo apt update"
+    echo "      sudo apt install -y python${PY_VER}-venv"
+    echo ""
+    echo "   Or: sudo apt install -y python3-venv"
+    echo ""
+    exit 1
+fi
+
+# Require bin/activate — a stale or empty "venv" dir breaks source
+if [ ! -f "venv/bin/activate" ]; then
+    if [ -d "venv" ]; then
+        echo "   ⚠️  venv/ exists but is incomplete (no bin/activate). Removing and recreating..."
+        rm -rf venv
+    fi
     echo "   Creating virtual environment..."
     python3 -m venv venv
 else

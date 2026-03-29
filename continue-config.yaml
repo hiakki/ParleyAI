@@ -13,9 +13,11 @@ version: 1.0.0
 schema: v1
 
 models:
-  # Chat and edit (main coding assistant)
-  # Only chat + edit work reliably with local models.
-  # Agent and apply need tool_use capability which most local GGUFs don't support well.
+  # Chat, edit, and apply (main coding assistant)
+  # chat  = conversation panel
+  # edit  = inline edits (select code → prompt)
+  # apply = writes suggested changes to files
+  # Agent/Plan modes won't work (need tool_use); the warning in VS Code can be ignored.
   - name: ParleyAI Chat
     provider: openai
     model: Qwen2.5-Coder-14B-Instruct          # ← your model_family_text
@@ -24,6 +26,7 @@ models:
     roles:
       - chat
       - edit
+      - apply
     defaultCompletionOptions:
       contextLength: 16384                       # ← must match ctx_text in backend/.env
       maxTokens: 4096
