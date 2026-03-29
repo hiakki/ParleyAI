@@ -183,8 +183,22 @@ echo "📦 Setting up Frontend..."
 cd frontend
 
 if ! command -v node &> /dev/null; then
-    echo "❌ Node.js not found!"
-    echo "   Install with: brew install node"
+    echo "   Node.js not found — installing nodejs + npm (apt, Debian/Ubuntu)..."
+    if _parleyai_apt_install nodejs npm; then
+        echo "   ✓ Node.js installed"
+    fi
+fi
+if ! command -v node &> /dev/null; then
+    echo ""
+    echo "❌ Node.js is still not available."
+    echo "   Debian/Ubuntu: sudo apt update && sudo apt install -y nodejs npm"
+    echo "   macOS (Homebrew): brew install node"
+    echo "   Or download: https://nodejs.org/"
+    echo ""
+    exit 1
+fi
+if ! command -v npm &> /dev/null; then
+    echo "❌ npm not found (install Node.js LTS, which includes npm)."
     exit 1
 fi
 
