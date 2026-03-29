@@ -7,6 +7,22 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Debian/Ubuntu: install apt packages when missing (so setup is one command for root/sudo users)
+_parleyai_apt_install() {
+    local pkgs="$*"
+    [ -n "$pkgs" ] || return 1
+    command -v apt-get &>/dev/null || return 1
+    export DEBIAN_FRONTEND=noninteractive
+    if [ "$(id -u)" -eq 0 ]; then
+        apt-get update -qq && apt-get install -y -qq $pkgs
+    elif command -v sudo &>/dev/null; then
+        sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq \
+            && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $pkgs
+    else
+        return 1
+    fi
+}
+
 echo "🦙 Setting up ParleyAI"
 echo "============================================="
 echo ""
@@ -18,15 +34,21 @@ cd backend
 # Debian/Ubuntu minimal images ship python3 without venv; `python3 -m venv` then fails with ensurepip errors.
 if ! python3 -c "import ensurepip" 2>/dev/null; then
     PY_VER="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "3")"
+    echo "   Python venv module missing — installing python${PY_VER}-venv (apt)..."
+    if _parleyai_apt_install "python${PY_VER}-venv" || _parleyai_apt_install python3-venv; then
+        echo "   ✓ python3 venv support installed"
+    else
+        echo ""
+        echo "❌ Python venv support (ensurepip) is not available and apt install failed."
+        echo "   Install manually, then re-run:"
+        echo "      sudo apt update && sudo apt install -y python${PY_VER}-venv"
+        echo ""
+        exit 1
+    fi
+fi
+if ! python3 -c "import ensurepip" 2>/dev/null; then
     echo ""
-    echo "❌ Python venv support (ensurepip) is not available."
-    echo "   On Debian/Ubuntu, install the matching venv package, then re-run this script:"
-    echo ""
-    echo "      sudo apt update"
-    echo "      sudo apt install -y python${PY_VER}-venv"
-    echo ""
-    echo "   Or: sudo apt install -y python3-venv"
-    echo ""
+    echo "❌ ensurepip still unavailable after apt install. Check Python version vs python*-venv package."
     exit 1
 fi
 
@@ -51,12 +73,20 @@ else
     _UNAME_S="$(uname -s)"
     if [ "$_UNAME_S" = "Linux" ]; then
         if ! command -v gcc &>/dev/null; then
+            echo "   C compiler missing — installing build-essential and cmake (apt)..."
+            if _parleyai_apt_install build-essential cmake; then
+                echo "   ✓ Build tools installed"
+            else
+                echo ""
+                echo "❌ gcc not found and apt install failed. Install manually:"
+                echo "      sudo apt update && sudo apt install -y build-essential cmake"
+                echo ""
+                exit 1
+            fi
+        fi
+        if ! command -v gcc &>/dev/null; then
             echo ""
-            echo "❌ C compiler (gcc) not found. llama-cpp-python builds from source on Linux."
-            echo "   Install build tools, then re-run this script:"
-            echo ""
-            echo "      sudo apt update && sudo apt install -y build-essential cmake"
-            echo ""
+            echo "❌ gcc still not on PATH after apt install."
             exit 1
         fi
         # CUDA build only if the toolkit is present (driver alone is not enough)

@@ -742,21 +742,11 @@ huggingface-cli download bartowski/mistralai_Mistral-Small-3.1-24B-Instruct-2503
 ./start.sh
 ```
 
-**Debian / Ubuntu (minimal server images):** install venv support first or `python3 -m venv` fails with “ensurepip is not available”:
+**Debian / Ubuntu:** `setup_fullstack.sh` tries to install missing packages via `apt-get` when you run as **root** or when **`sudo`** is available: `python3.X-venv`, `build-essential`, and `cmake`. You should not need separate manual `apt` steps on a typical server.
 
-```bash
-sudo apt update && sudo apt install -y python3-venv
-# Or match your Python minor version, e.g. Python 3.12:
-# sudo apt install -y python3.12-venv
-```
+If apt install fails (no root/sudo, or non-Debian Linux), install the same packages with your distro’s package manager. Minimal Ubuntu without venv: `sudo apt install -y python3.12-venv` (match your Python minor version). Without `gcc`, `llama-cpp-python` cannot compile: `sudo apt install -y build-essential cmake`.
 
-**Linux (compile `llama-cpp-python`):** the setup script builds `llama-cpp-python` from source. You need a C/C++ toolchain and CMake:
-
-```bash
-sudo apt update && sudo apt install -y build-essential cmake
-```
-
-Without `gcc`, pip fails with “Could not find the compiler … x86_64-linux-gnu-gcc”. On Linux, ParleyAI uses a **CPU** build of `llama-cpp-python` unless `nvcc` (CUDA toolkit) is on `PATH`, in which case the script enables **CUDA** for that package.
+On Linux, ParleyAI uses a **CPU** build of `llama-cpp-python` unless `nvcc` (CUDA toolkit) is on `PATH`, in which case the script enables **CUDA** for that package.
 
 ### Windows (PowerShell)
 ```powershell
